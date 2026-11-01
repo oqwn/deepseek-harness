@@ -1,11 +1,12 @@
 /** Trajectory view: compact summary over a turn-aware event ledger. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type {
-  AssistantBlock, AssistantMessageNode, ConvViewProps, MessageImageLoader,
+  AssistantBlock, AssistantMessageNode, MessageImageLoader, MessageImagesOwnerProps,
   ToolCallBlock,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { InjectFace, PropsLocale, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import type { FactoryComponentPropsOf, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { JsonTreeProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
@@ -27,7 +28,10 @@ import {
 } from './timeline.ts'
 import { trajectoryRecordId } from './trajectory-record.ts'
 import { TrajectorySearchIndex } from './trajectory-search-index.ts'
-import type { TrajectorySnapshot } from './trajectory-contract.ts'
+import type { TrajectoryContentInput, TrajectorySnapshot } from './trajectory-contract.ts'
+import {
+  deriveTrajectorySubagentLinks, type TrajectorySubagentLink,
+} from './trajectory-subagent.ts'
 import css from './views.module.css'
 
 const EMPTY_TURN_IDS: ReadonlySet<number> = new Set()
@@ -131,13 +135,41 @@ function addUsage(
   }
 }
 
-export function TrajectoryView({
-  useSession, useTrajectory, useDuration, watchToolResult, loadOlder, loadImage, setActualDuration,
-  viewRequest, completeViewRequest, renderSlot, t, jsonStringWrapping,
-}: ConvViewProps
-  & Pick<PropsRenderSlots<'conversation.trajectory.images'>, 'renderSlot'>
+/** How a ledger shows the subagent Session behind a linked tool record. */
+export type TrajectorySubagentPresentation =
+  /** Expand the record into an inline panel whose content the caller renders. */
+  | { readonly kind: 'expand'; readonly render: (link: TrajectorySubagentLink) => ReactNode }
+  /** Ask the surrounding subagent panel to show the linked Session instead. */
+  | { readonly kind: 'open'; readonly open: (link: TrajectorySubagentLink) => void }
+
+/** Props read by one Session's Trajectory presentation. */
+export type TrajectoryViewProps =
+  & TrajectoryContentInput
+  & Pick<
+    FactoryComponentPropsOf<'conversation.trajectory.content'>,
+    'sessionId' | 'useSession' | 'useTrajectory' | 'useProjection' | 't'
+  >
   & InjectFace<TrajectoryViewInjected>
-  & PropsLocale<'trajectory'>) {
+  & {
+    /** Render one durable image group through the `conversation.trajectory.images` Slot. */
+    readonly renderImages: (owner: MessageImagesOwnerProps) => ReactNode
+    /** Presentation of subagent Sessions created by this Session's tool records. */
+    readonly subagents: TrajectorySubagentPresentation
+    /** Whether this ledger is embedded in a parent panel rather than the floating-composer View. */
+    readonly nested?: boolean
+  }
+
+/**
+ * Render one Session's toolbar, timing overview, ledger, and inspector.
+ * Tool records linked to a direct child Session show that child through `subagents`.
+ * @param props - Focus request, Session standard props, injected controls, and presentation callbacks.
+ * @returns The toolbar, timing overview, ledger, and local inspector.
+ */
+export function TrajectoryView({
+  sessionId, useSession, useTrajectory, useProjection, useDuration, watchToolResult, loadOlder, loadImage,
+  setActualDuration, viewRequest, completeViewRequest, nested = false, renderImages, subagents, t,
+  jsonStringWrapping,
+}: TrajectoryViewProps) {
   const [collapsedTurns, setCollapsedTurns] = useState<ReadonlySet<number>>(EMPTY_TURN_IDS)
   const [collapsedAssistants, setCollapsedAssistants] =
     useState<ReadonlySet<string>>(EMPTY_RECORD_IDS)
@@ -332,6 +364,24 @@ export function TrajectoryView({
     nodes, eventLocations, partialTurn, partialStep,
     runningCalls, requests, inspection.systemPrompts, callSchemas, t,
   ])
+  const subagentCatalog = useProjection('subagentCatalog')
+  const subagentLinks = useMemo(
+    () => deriveTrajectorySubagentLinks(finalized.turns, subagentCatalog, sessionId),
+    [finalized.turns, sessionId, subagentCatalog],
+  )
+  const [expandedSubagents, setExpandedSubagents] = useState<ReadonlySet<string>>(EMPTY_RECORD_IDS)
+  const toggleSubagent = useCallback((id: string, link: TrajectorySubagentLink) => {
+    if (subagents.kind === 'open') {
+      subagents.open(link)
+      return
+    }
+    setExpandedSubagents((current) => {
+      const expanded = new Set(current)
+      if (expanded.has(id)) expanded.delete(id)
+      else expanded.add(id)
+      return expanded
+    })
+  }, [subagents])
   const timelinePartialSignature = partialStructureSignature(partial)
   const partialStartTime = partial?.timing?.stepStartTime
   const partialFirstTokenTime = partial?.timing?.firstTokenTime
@@ -542,7 +592,11 @@ export function TrajectoryView({
   }, [hasResidentOlderHistory, loadOlder])
 
   return (
-    <div className={css.root} data-conversation-composer-overlay="">
+    <div
+      className={css.root}
+      data-conversation-composer-overlay={nested ? undefined : ''}
+      data-trajectory-nested={nested ? '' : undefined}
+    >
       <TrajectoryToolbar
         actualDuration={actualDuration}
         onActualDurationChange={(nextActualDuration) => {
@@ -585,7 +639,7 @@ export function TrajectoryView({
             ...jsonStringWrapping,
             label: t('record.wrapLines'),
           }}
-          renderSlot={renderSlot}
+          renderImages={renderImages}
           loadImage={loadImage}
           requestNumbers={requestNumbers}
           turns={timelineTurns}
@@ -610,6 +664,11 @@ export function TrajectoryView({
           onToggleTool={toggleTool}
           inspectCallId={inspectCallId}
           onInspectApplied={completeViewRequest}
+          subagentLinks={subagentLinks}
+          subagentAction={subagents.kind}
+          expandedSubagents={subagents.kind === 'expand' ? expandedSubagents : EMPTY_RECORD_IDS}
+          onToggleSubagent={toggleSubagent}
+          {...subagents.kind === 'expand' ? { renderSubagent: subagents.render } : {}}
         />
       </div>
     </div>

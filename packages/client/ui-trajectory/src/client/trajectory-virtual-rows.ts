@@ -6,11 +6,27 @@ import { trajectoryRecordId } from './trajectory-record.ts'
 const CONTENT_ROW_HEIGHT = 30
 const COLLAPSED_SUMMARY_HEIGHT = 20
 const TERMINAL_BOUNDARY_HEIGHT = 9
+/** CSS-owned height of the disclosure row beneath a linked subagent record. */
+const SUBAGENT_TOGGLE_HEIGHT = 24
+/** CSS-owned height of an expanded subagent's embedded Trajectory row. */
+const SUBAGENT_PANEL_HEIGHT = 480
+
+/** Synthetic row beneath a tool record linked to a subagent Session. */
+export type TrajectorySubagentRowKind = 'toggle' | 'panel'
 
 /** Minimal record shape required by the trajectory virtual-row projection. */
 export interface VirtualizableTrajectoryRecord {
   cell: TrajectoryCellProps
   collapsedSummaryKind?: 'turn' | 'assistant' | 'tool'
+  /** Present on a synthetic subagent row, whose cell is the linked tool record. */
+  subagent?: { readonly row: TrajectorySubagentRowKind }
+}
+
+function rowHeight(record: VirtualizableTrajectoryRecord): number {
+  if (record.subagent !== undefined) {
+    return record.subagent.row === 'toggle' ? SUBAGENT_TOGGLE_HEIGHT : SUBAGENT_PANEL_HEIGHT
+  }
+  return record.collapsedSummaryKind === undefined ? CONTENT_ROW_HEIGHT : COLLAPSED_SUMMARY_HEIGHT
 }
 
 /** One logical record retained inside a measurable virtual row. */
@@ -30,12 +46,13 @@ export interface TrajectoryVirtualRow<T extends VirtualizableTrajectoryRecord> {
  * Derive the DOM-safe row identity shared by React, the virtualizer, and
  * browser scroll contracts.
  * @param record - Display record whose identity is required.
- * @returns Stable record identity with a suffix for synthetic fold summaries.
+ * @returns Stable record identity with a suffix for synthetic fold summaries and subagent rows.
  */
 export function trajectoryVirtualRecordKey(
   record: VirtualizableTrajectoryRecord,
 ): string {
   const identity = encodeURIComponent(trajectoryRecordId(record.cell))
+  if (record.subagent !== undefined) return `${identity}\u0000subagent\u0000${record.subagent.row}`
   return record.collapsedSummaryKind === undefined
     ? identity
     : `${identity}\u0000summary\u0000${record.collapsedSummaryKind}`
@@ -64,9 +81,7 @@ export function groupTrajectoryVirtualRows<T extends VirtualizableTrajectoryReco
     pending = []
     rows.push({
       entries,
-      height: record.collapsedSummaryKind === undefined
-        ? CONTENT_ROW_HEIGHT
-        : COLLAPSED_SUMMARY_HEIGHT,
+      height: rowHeight(record),
       key: trajectoryVirtualRecordKey(record),
     })
   }

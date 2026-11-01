@@ -162,8 +162,8 @@ Factory: conversation.content [ConversationContent]
 │     │        └─ key=turn-tail [TurnTailNodeView]
 │     │           ├─ conversation.chat.turnTail
 │     │           └─ conversation.chat.assistant-actions
-│     └─ id=trajectory [TrajectoryView / TrajectoryTable]
-│        └─ conversation.trajectory.images [MessageImages]
+│     └─ id=trajectory [TrajectoryViewEntry]
+│        └─ calls Factory: conversation.trajectory.content
 ├─ conversation.composer
 │  ├─ conversation.approval.detail
 │  └─ conversation.plan-review.actions
@@ -192,6 +192,10 @@ Factory: conversation.chat.user.content [UserContent]
 
 Factory: conversation.user.text [UserText]
 └─ conversation.user.text.node [keyed, inline]
+
+Factory: conversation.trajectory.content [TrajectoryContent / TrajectoryView]
+├─ conversation.trajectory.images [MessageImages]
+└─ conversation.trajectory.subagent [TrajectorySubagentContent / TrajectoryView]
 
 Factory: conversation.images.content [MessageImagesContent / ImageGallery]
 Factory: conversation.chat.reasoning.content [ReasoningContent / MarkdownText]

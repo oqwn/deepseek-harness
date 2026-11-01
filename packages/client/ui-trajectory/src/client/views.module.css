@@ -30,3 +30,8 @@
   /* ConversationRoot publishes the floating composer's live height. */
   --dsh-trajectory-bottom-clearance: calc(var(--dsh-composer-height, 152px) + 16px);
 }
+
+/* An embedded child-Session ledger sits inside its parent row, away from the composer. */
+.root[data-trajectory-nested] .ledger {
+  --dsh-trajectory-bottom-clearance: 8px;
+}

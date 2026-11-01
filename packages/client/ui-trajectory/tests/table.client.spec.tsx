@@ -12,13 +12,15 @@ import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import type { MessageImageLoader, MessageImagesOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import { TrajectoryTable as LocalizedTrajectoryTable } from '../src/client/TrajectoryTable.tsx'
+import {
+  TrajectoryTable as LocalizedTrajectoryTable, type TrajectoryImageRenderer,
+} from '../src/client/TrajectoryTable.tsx'
 import { deriveTrajectoryLayout, type TrajectoryTurnModel } from '../src/client/layout.ts'
 import { trajectoryRecordId, type TrajectoryCellProps } from '../src/client/trajectory-record.ts'
 import { t, tZh } from './locale.client.ts'
 
 const loadImage: MessageImageLoader = async () => 'blob:trajectory'
-const renderNoImages: PropsRenderSlots<'conversation.trajectory.images'>['renderSlot'] = () => null
+const renderNoImages: TrajectoryImageRenderer = () => null
 
 const RecordImages = ({ images }: MessageImagesOwnerProps) => (
   <div data-testid="record-images" data-count={images.length}>
@@ -50,7 +52,7 @@ async function imageSlotFixture() {
   const { seats, setContent } = captured
   if (seats === undefined || setContent === undefined) throw new Error('trajectory image fixture root did not render')
   return {
-    renderSlot: seats.renderSlot,
+    renderImages: (owner: MessageImagesOwnerProps) => seats.renderSlot('conversation.trajectory.images', owner),
     render: (content: ReactNode) => {
       act(() => { setContent(content) })
       return view
@@ -61,8 +63,8 @@ async function imageSlotFixture() {
 type TableProps = ComponentProps<typeof LocalizedTrajectoryTable>
 
 function TrajectoryTable(
-  props: Omit<TableProps, 't' | 'renderSlot' | 'loadImage'>
-    & Partial<Pick<TableProps, 'renderSlot' | 'loadImage'>>,
+  props: Omit<TableProps, 't' | 'renderImages' | 'loadImage'>
+    & Partial<Pick<TableProps, 'renderImages' | 'loadImage'>>,
 ) {
   const inferred: Array<NonNullable<typeof props.requestNumbers>[number] & { firstIndex: number }> = []
   for (const turn of props.turns) {
@@ -96,7 +98,7 @@ function TrajectoryTable(
     .map(({ firstIndex: _firstIndex, ...request }, index) => ({ ...request, number: index + 1 }))
   return (
     <LocalizedTrajectoryTable
-      renderSlot={renderNoImages} loadImage={loadImage}
+      renderImages={renderNoImages} loadImage={loadImage}
       {...props}
       requestNumbers={requestNumbers}
       t={t}
@@ -206,7 +208,7 @@ describe('TrajectoryTable', () => {
     render(
       <LocalizedTrajectoryTable
         t={tZh}
-        renderSlot={renderNoImages} loadImage={loadImage}
+        renderImages={renderNoImages} loadImage={loadImage}
         turns={TURNS}
         collapsedTurns={new Set<number>()}
         onToggleTurn={() => {}}
@@ -1025,7 +1027,7 @@ describe('TrajectoryTable', () => {
     }]
     const table = (status: 'running' | 'complete' | 'error') => (
       <LocalizedTrajectoryTable
-        turns={turns} {...FOLD_PROPS} t={translate} renderSlot={renderNoImages} loadImage={loadImage}
+        turns={turns} {...FOLD_PROPS} t={translate} renderImages={renderNoImages} loadImage={loadImage}
         requestNumbers={[{
           turn: 1, step: 1, group: 'Step 1', number: 1, status,
           error: 'upstream 503', errorCode: 'SERVER', retry: 1, maxRetries: 2,
@@ -1291,10 +1293,10 @@ describe('TrajectoryTable', () => {
         partial: null,
         runningCalls: [],
       }, translate)
-      const { render, renderSlot: slotRenderer } = await imageSlotFixture()
-      const renderSlot = vi.fn((name: 'conversation.trajectory.images', owner: object) => slotRenderer(name, owner as MessageImagesOwnerProps))
+      const { render, renderImages: slotRenderer } = await imageSlotFixture()
+      const renderImages = vi.fn((owner: MessageImagesOwnerProps) => slotRenderer(owner))
       const view = render(<LocalizedTrajectoryTable turns={turns} {...FOLD_PROPS} t={translate}
-        renderSlot={renderSlot} loadImage={loadImage} />)
+        renderImages={renderImages} loadImage={loadImage} />)
       fireEvent.click(view.container.querySelector('[data-trajectory-row-key]')!)
       for (const tab of [summaryTab, previewTab]) {
         fireEvent.click(screen.getByRole('tab', { name: tab }))
@@ -1303,7 +1305,7 @@ describe('TrajectoryTable', () => {
         expect(names).toEqual([imageLabel, file.name, imageLabel.replace('1', '2')])
         expect(within(list).getByText('TXT · 0B')).toBeTruthy()
         expect(within(list).getAllByText('image/png · 68B · 40 × 800')).toHaveLength(2)
-        expect(renderSlot).toHaveBeenCalledWith('conversation.trajectory.images', {
+        expect(renderImages).toHaveBeenCalledWith({
           images: [{ attachment, label: imageLabel }], align: 'start', thumbnail: true, loadImage,
         })
       }
@@ -1322,7 +1324,7 @@ describe('TrajectoryTable', () => {
   )
 
   it('renders a tool-result image through the shared gallery in the Result tab', async () => {
-    const { render, renderSlot } = await imageSlotFixture()
+    const { render, renderImages } = await imageSlotFixture()
     const attachment = {
       attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`),
       mediaType: 'image/png',
@@ -1348,7 +1350,7 @@ describe('TrajectoryTable', () => {
       }],
     }]
 
-    render(<TrajectoryTable turns={turns} {...FOLD_PROPS} renderSlot={renderSlot} />)
+    render(<TrajectoryTable turns={turns} {...FOLD_PROPS} renderImages={renderImages} />)
     fireEvent.click(screen.getByRole('row', { name: /TOOL/ }))
     fireEvent.click(screen.getByRole('tab', { name: 'Result' }))
 
@@ -1359,7 +1361,7 @@ describe('TrajectoryTable', () => {
   })
 
   it('keeps the failure name beside an image-only error result', async () => {
-    const { render, renderSlot } = await imageSlotFixture()
+    const { render, renderImages } = await imageSlotFixture()
     const attachment = {
       attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`),
       mediaType: 'image/png',
@@ -1386,7 +1388,7 @@ describe('TrajectoryTable', () => {
       }],
     }]
 
-    render(<TrajectoryTable turns={turns} {...FOLD_PROPS} renderSlot={renderSlot} />)
+    render(<TrajectoryTable turns={turns} {...FOLD_PROPS} renderImages={renderImages} />)
     fireEvent.click(screen.getByRole('row', { name: /TOOL/ }))
     fireEvent.click(screen.getByRole('tab', { name: 'Result' }))
 
@@ -1616,4 +1618,136 @@ describe('TrajectoryTable', () => {
 it('preserves seconds and token units in translated metric labels', () => {
   expect(makeTranslate(es)('unit.seconds', { value: '1.25' })).toBe('1.25 s')
   expect(makeTranslate(pt)('unit.tokens', { value: 42 })).toBe('42 tok')
+})
+
+describe('subagent rows', () => {
+  const SUBAGENT_TURNS: readonly TrajectoryTurnModel[] = [{
+    turn: 1,
+    groups: [{
+      title: 'Step 1',
+      cells: [
+        { index: 1, kind: 'message', text: 'Delegating the video', timeSeconds: 1 },
+        {
+          index: 2, kind: 'tool', text: 'subagent', callId: 'delegate', toolName: 'subagent',
+          result: 'started subagent child-1', resultSeq: 4, timeSeconds: 0.5,
+        },
+        { index: 3, kind: 'tool', text: 'read', callId: 'read-1', toolName: 'read', timeSeconds: 0.1 },
+      ],
+    }],
+  }]
+  const linkedCell = SUBAGENT_TURNS[0]!.groups[0]!.cells[1]!
+  const linkId = trajectoryRecordId(linkedCell)
+  const address = {
+    parentSessionId: SessionId('parent'),
+    childSessionId: SessionId('child-1'),
+    mode: 'one-shot' as const,
+  }
+  const links = new Map([[linkId, { address, label: 'Like a video' }]])
+
+  it('places a disclosure directly after the linked record and toggles through the handler', () => {
+    const onToggleSubagent = vi.fn()
+    render(<TrajectoryTable turns={SUBAGENT_TURNS} {...FOLD_PROPS}
+      subagentLinks={links} onToggleSubagent={onToggleSubagent} />)
+
+    const disclosure = screen.getByRole('button', { name: 'Show subagent trajectory: Like a video' })
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    const row = disclosure.closest('tr')
+    expect(row?.getAttribute('data-subagent-row')).toBe('toggle')
+    expect(row?.previousElementSibling?.getAttribute('data-record-index')).toBe('2')
+    expect(row?.nextElementSibling?.getAttribute('data-record-index')).toBe('3')
+    expect(row?.hasAttribute('data-record-index')).toBe(false)
+    expect(screen.queryByRole('region', { name: /Subagent trajectory/ })).toBeNull()
+    expect(screen.getByRole('table').getAttribute('aria-rowcount')).toBe('4')
+
+    fireEvent.click(disclosure)
+
+    expect(onToggleSubagent).toHaveBeenCalledWith(linkId, { address, label: 'Like a video' })
+  })
+
+  it('renders an expanded subagent through the supplied renderer in a panel row', () => {
+    render(<TrajectoryTable turns={SUBAGENT_TURNS} {...FOLD_PROPS}
+      subagentLinks={links}
+      expandedSubagents={new Set([linkId])}
+      renderSubagent={link => <div data-testid="nested-trajectory">{link.address.childSessionId}</div>} />)
+
+    expect(screen.getByRole('button', { name: 'Hide subagent trajectory: Like a video' })
+      .getAttribute('aria-expanded')).toBe('true')
+    const panel = screen.getByRole('region', { name: 'Subagent trajectory: Like a video' })
+    expect(within(panel).getByTestId('nested-trajectory').textContent).toBe('child-1')
+    const panelRow = panel.closest('tr')
+    expect(panelRow?.getAttribute('data-subagent-row')).toBe('panel')
+    expect(panelRow?.nextElementSibling?.getAttribute('data-record-index')).toBe('3')
+  })
+
+  it('offers an open action without disclosure state in open mode', () => {
+    const onToggleSubagent = vi.fn()
+    render(<TrajectoryTable turns={SUBAGENT_TURNS} {...FOLD_PROPS}
+      subagentLinks={links} subagentAction="open" onToggleSubagent={onToggleSubagent} />)
+
+    const open = screen.getByRole('button', { name: 'Open subagent trajectory: Like a video' })
+    expect(open.hasAttribute('aria-expanded')).toBe(false)
+    expect(open.textContent).toBe('SubagentLike a videoOpen trajectory')
+
+    fireEvent.click(open)
+
+    expect(onToggleSubagent).toHaveBeenCalledWith(linkId, { address, label: 'Like a video' })
+    expect(screen.queryByRole('region', { name: /Subagent trajectory/ })).toBeNull()
+  })
+
+  it('labels a child by its Session id and tolerates absent handlers', () => {
+    render(<TrajectoryTable turns={SUBAGENT_TURNS} {...FOLD_PROPS}
+      subagentLinks={new Map([[linkId, { address }]])}
+      expandedSubagents={new Set([linkId])} />)
+
+    const disclosure = screen.getByRole('button', { name: 'Hide subagent trajectory: child-1' })
+    fireEvent.click(disclosure)
+    expect(screen.getByRole('region', { name: 'Subagent trajectory: child-1' }).childElementCount).toBe(0)
+  })
+
+  it('omits subagent rows while the linked call is folded or filtered out', () => {
+    const assistantId = trajectoryRecordId(SUBAGENT_TURNS[0]!.groups[0]!.cells[0]!)
+    const view = render(<TrajectoryTable turns={SUBAGENT_TURNS} {...FOLD_PROPS}
+      collapsedAssistants={new Set([assistantId])} subagentLinks={links} />)
+    expect(screen.queryByRole('button', { name: /subagent trajectory/ })).toBeNull()
+
+    view.rerender(<TrajectoryTable turns={SUBAGENT_TURNS} {...FOLD_PROPS}
+      searchMatchIndexes={new Set([3])} subagentLinks={links} />)
+    expect(screen.queryByRole('button', { name: /subagent trajectory/ })).toBeNull()
+
+    view.rerender(<TrajectoryTable turns={SUBAGENT_TURNS} {...FOLD_PROPS}
+      searchMatchIndexes={new Set([2])} subagentLinks={links} />)
+    expect(screen.getByRole('button', { name: 'Show subagent trajectory: Like a video' })).toBeTruthy()
+  })
+
+  it('keeps subagent rows addressable inside a virtual ledger', async () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(600)
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      value: vi.fn(),
+    })
+    const view = render(<TrajectoryTable turns={SUBAGENT_TURNS} {...FOLD_PROPS} hasOlderRecords
+      subagentLinks={links} expandedSubagents={new Set([linkId])}
+      renderSubagent={() => <div data-testid="nested-trajectory" />} />)
+
+    await waitFor(() => {
+      expect(view.container.querySelector('tr[data-subagent-row="panel"]')
+        ?.getAttribute('data-virtual-position')).toBe('3')
+    })
+    expect(view.container.querySelector('tr[data-subagent-row="toggle"]')
+      ?.getAttribute('data-virtual-position')).toBe('2')
+    expect(view.container.querySelector('tr[data-subagent-row="toggle"]')
+      ?.getAttribute('aria-rowindex')).toBe('4')
+  })
+
+  it('dims subagent rows with their linked record outside a timeline focus', () => {
+    const view = render(<TrajectoryTable turns={SUBAGENT_TURNS} {...FOLD_PROPS}
+      timelineFocusIndexes={new Set([3])} subagentLinks={links} />)
+    expect(view.container.querySelector('tr[data-subagent-row="toggle"]')
+      ?.getAttribute('data-timeline-focus')).toBe('outside')
+
+    view.rerender(<TrajectoryTable turns={SUBAGENT_TURNS} {...FOLD_PROPS}
+      timelineFocusIndexes={new Set([2])} subagentLinks={links} />)
+    expect(view.container.querySelector('tr[data-subagent-row="toggle"]')
+      ?.getAttribute('data-timeline-focus')).toBe('inside')
+  })
 })

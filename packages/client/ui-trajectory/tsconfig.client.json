@@ -13,6 +13,9 @@
       "path": "../locale/tsconfig.client.json"
     },
     {
+      "path": "../resources"
+    },
+    {
       "path": "../store"
     },
     {
@@ -41,6 +44,9 @@
     },
     {
       "path": "../../compaction/compaction"
+    },
+    {
+      "path": "../../subagent/subagent"
     },
     {
       "path": "../../llm/llm"

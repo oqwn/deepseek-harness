@@ -9,8 +9,8 @@
   en: 60e3cab036a4a8c6
   zh: 2a400cd0efd99284
 /deepseek-ai-dsh-client-ui-trajectory/summary:
-  en: dc75677138d05dc6
-  zh: 6e11553a5caf4716
+  en: 970a10c454830fb5
+  zh: 027a142160cdee84
 /deepseek-ai-dsh-client-ui-trajectory/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -18,23 +18,26 @@
   en: 4bd17d05b8385675
   zh: 5174e27f754f2a03
 /deepseek-ai-dsh-client-ui-trajectory/use-this-package/inspecting-records:
-  en: 4bf16077921c643c
-  zh: 08ded05f8f0afded
+  en: 1ed0aeb37a54676a
+  zh: 87334e386981c02c
+/deepseek-ai-dsh-client-ui-trajectory/use-this-package/subagent-trajectories:
+  en: 76d774b362ab6ac8
+  zh: ef4dc25deb4066c4
 /deepseek-ai-dsh-client-ui-trajectory/use-this-package/the-timing-overview:
   en: 0f4ee2189324ac06
   zh: 12e76fed22c09bc1
 /deepseek-ai-dsh-client-ui-trajectory/understand-the-implementation:
-  en: 0d22ad8a6bfc0eab
-  zh: 3221c4dd5874c585
+  en: c908f1fe90e1923a
+  zh: ac314430deca211c
 /deepseek-ai-dsh-client-ui-trajectory/understand-the-implementation/virtual-rows:
-  en: c85e342bc7eee4e6
-  zh: 9feab66ef1755b94
+  en: 53012dea949dff59
+  zh: 9471454a2f18ec8b
 /deepseek-ai-dsh-client-ui-trajectory/understand-the-implementation/layout:
   en: 2fad51d9b75e49d4
   zh: 05cf292f6d5dd770
 /deepseek-ai-dsh-client-ui-trajectory/further-exploration:
-  en: a324740cfbe62c1e
-  zh: 53077c3ffc69b510
+  en: b805ee0f233b1d4b
+  zh: 6165c300bf3db711
 /deepseek-ai-dsh-client-ui-trajectory/model-experience:
   en: 5432585f567e6546
   zh: 2c68717a4bf413c7
@@ -42,8 +45,8 @@
   en: ca75c51c89c2c9b0
   zh: de54f3467ef3b9be
 /deepseek-ai-dsh-client-ui-trajectory/known-limitations-and-deferred-work:
-  en: d7da620f56eb3c65
-  zh: fb030b68322b94cd
+  en: a171fc5e56653a70
+  zh: 5522c99669c001a7
 /deepseek-ai-dsh-client-ui-trajectory/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

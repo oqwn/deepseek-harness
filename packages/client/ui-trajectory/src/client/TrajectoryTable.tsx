@@ -25,10 +25,9 @@ import {
   writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { JsonTreeLabels, JsonTreeProps, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { structuredPatch } from 'diff'
 import type {
-  AssistantRequestConfig, ConversationPromptSnapshot, MessageImageLoader,
+  AssistantRequestConfig, ConversationPromptSnapshot, MessageImageLoader, MessageImagesOwnerProps,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   AssistantMetricDetail, TrajectoryCellKind, TrajectoryCellProps, TrajectorySourceBlock,
@@ -37,7 +36,8 @@ import { formatElapsedSeconds, trajectoryRecordId } from './trajectory-record.ts
 import {
   groupTrajectoryVirtualRows, trajectoryVirtualRecordKey,
 } from './trajectory-virtual-rows.ts'
-import type { TrajectoryVirtualRow } from './trajectory-virtual-rows.ts'
+import type { TrajectorySubagentRowKind, TrajectoryVirtualRow } from './trajectory-virtual-rows.ts'
+import type { TrajectorySubagentLink } from './trajectory-subagent.ts'
 import type { TrajectoryTurnModel } from './layout.ts'
 import { trajectoryPreviewText } from './trajectory-preview.ts'
 import type { TrajectoryKey, TrajectoryTranslate } from './locales.ts'
@@ -143,7 +143,18 @@ interface TableRecord {
   turnEnd: boolean
   collapsedSummary?: string
   collapsedSummaryKind?: 'turn' | 'assistant' | 'tool'
+  /** Synthetic disclosure or panel row beneath a tool record linked to a subagent Session. */
+  subagent?: SubagentRowState
 }
+
+interface SubagentRowState {
+  readonly row: TrajectorySubagentRowKind
+  readonly link: TrajectorySubagentLink
+  readonly expanded: boolean
+}
+
+const NO_SUBAGENT_LINKS: ReadonlyMap<string, TrajectorySubagentLink> = new Map()
+const NO_EXPANDED_SUBAGENTS: ReadonlySet<string> = new Set()
 
 const COLLAPSED_SUMMARY_LABEL_KEY: Record<NonNullable<TableRecord['collapsedSummaryKind']>, TrajectoryKey> = {
   turn: 'request.collapsedTurn',
@@ -394,6 +405,9 @@ function AssistantTimingPanel({
   )
 }
 
+/** Render one group of durable record images through the `conversation.trajectory.images` Slot. */
+export type TrajectoryImageRenderer = (owner: MessageImagesOwnerProps) => ReactNode
+
 /** Props for the trajectory ledger. */
 export interface TrajectoryTableProps {
   /** Observe the selected result while the Result tab is open. */
@@ -403,7 +417,7 @@ export interface TrajectoryTableProps {
   /** Trajectory locale seat. */
   t: TrajectoryTranslate
   /** Slot-backed durable image renderer shared with the Chat gallery. */
-  renderSlot: PropsRenderSlots<'conversation.trajectory.images'>['renderSlot']
+  renderImages: TrajectoryImageRenderer
   /** Session-bound loader for durable message image attachments. */
   loadImage: MessageImageLoader
   /** Session-global request numbers for the request groups visible in this context. */
@@ -452,7 +466,20 @@ export interface TrajectoryTableProps {
   inspectCallId?: string | null
   /** Acknowledge a consumed (or unresolvable) inspect request. */
   onInspectApplied?: (() => void) | undefined
+  /** Subagent Sessions keyed by the stable identity of the tool record that created them. */
+  subagentLinks?: ReadonlyMap<string, TrajectorySubagentLink>
+  /** Whether a linked record expands an inline panel or opens the child in the surrounding panel. */
+  subagentAction?: TrajectorySubagentAction
+  /** Linked record identities whose subagent Trajectory is expanded. */
+  expandedSubagents?: ReadonlySet<string>
+  /** Toggle or open one linked record's subagent Trajectory. */
+  onToggleSubagent?: (id: string, link: TrajectorySubagentLink) => void
+  /** Render one expanded subagent's Trajectory inside its fixed-height panel row. */
+  renderSubagent?: (link: TrajectorySubagentLink) => ReactNode
 }
+
+/** Disclosure behavior of a linked subagent record. */
+export type TrajectorySubagentAction = 'expand' | 'open'
 
 /** Request-inspector fields shared by ordinary generation and compaction. */
 interface TrajectoryRequestNumberBase {
@@ -551,6 +578,38 @@ function filterRecords(
     record.turnEnd = next === undefined || next.section !== record.section
   }
   return filtered
+}
+
+/**
+ * Place a disclosure row, and an embedded panel row when expanded, after each
+ * visible tool record linked to a subagent Session. Runs after search and
+ * folding, so a folded or filtered tool record contributes no synthetic rows.
+ */
+function insertSubagentRecords(
+  records: readonly TableRecord[],
+  links: ReadonlyMap<string, TrajectorySubagentLink>,
+  expanded: ReadonlySet<string>,
+): readonly TableRecord[] {
+  if (links.size === 0) return records
+  const output: TableRecord[] = []
+  for (const record of records) {
+    const id = trajectoryRecordId(record.cell)
+    const link = record.collapsedSummary === undefined ? links.get(id) : undefined
+    if (link === undefined) {
+      output.push(record)
+      continue
+    }
+    const open = expanded.has(id)
+    const synthetic = { ...record, groupStart: false, turnStart: false }
+    output.push({ ...record, turnEnd: false })
+    output.push({
+      ...synthetic,
+      turnEnd: record.turnEnd && !open,
+      subagent: { row: 'toggle', link, expanded: open },
+    })
+    if (open) output.push({ ...synthetic, subagent: { row: 'panel', link, expanded: true } })
+  }
+  return output
 }
 
 function requestKey(turn: number | null, group: string): string {
@@ -1258,13 +1317,13 @@ function recordAttachments(
 function RecordAttachments({
   blocks,
   preview,
-  renderSlot,
+  renderImages,
   loadImage,
   t,
 }: {
   blocks: readonly TrajectorySourceBlock[] | undefined
   preview: boolean
-  renderSlot: PropsRenderSlots<'conversation.trajectory.images'>['renderSlot']
+  renderImages: TrajectoryImageRenderer
   loadImage: MessageImageLoader
   t: TrajectoryTranslate
 }) {
@@ -1278,7 +1337,7 @@ function RecordAttachments({
       {attachments.map(({ block, index, name, metadata }) => (
         <li className={css.attachmentRow} key={index}>
           {block.attachment !== undefined
-            ? renderSlot('conversation.trajectory.images', {
+            ? renderImages({
               images: [{ attachment: block.attachment, label: name }],
               align: 'start',
               thumbnail: true,
@@ -1497,7 +1556,7 @@ function ToolOutputBlocks({
   error,
   errorDetail,
   preview,
-  renderSlot,
+  renderImages,
   loadImage,
 }: {
   blocks: readonly TrajectorySourceBlock[]
@@ -1505,7 +1564,7 @@ function ToolOutputBlocks({
   /** Failure name and code shown only when no recorded text block is non-empty. */
   errorDetail?: string | undefined
   preview: boolean
-  renderSlot: PropsRenderSlots<'conversation.trajectory.images'>['renderSlot']
+  renderImages: TrajectoryImageRenderer
   loadImage: MessageImageLoader
 }) {
   return (
@@ -1522,7 +1581,7 @@ function ToolOutputBlocks({
         block.attachment !== undefined
           ? (
             <div className={css.messageImages} key={index}>
-              {renderSlot('conversation.trajectory.images', { images: [{ attachment: block.attachment }], align: 'start', loadImage })}
+              {renderImages({ images: [{ attachment: block.attachment }], align: 'start', loadImage })}
             </div>
           )
           : block.content !== ''
@@ -1540,7 +1599,7 @@ function MarkdownRecordContent({
   thinkingExpanded,
   onThinkingExpandedChange,
   onOpenCall,
-  renderSlot,
+  renderImages,
   loadImage,
   t,
 }: {
@@ -1550,7 +1609,7 @@ function MarkdownRecordContent({
   thinkingExpanded: boolean
   onThinkingExpandedChange: (expanded: boolean) => void
   onOpenCall: (callId: string) => void
-  renderSlot: PropsRenderSlots<'conversation.trajectory.images'>['renderSlot']
+  renderImages: TrajectoryImageRenderer
   loadImage: MessageImageLoader
   t: TrajectoryTranslate
 }) {
@@ -1621,7 +1680,7 @@ function MarkdownRecordContent({
         <RecordAttachments
           blocks={record.cell.sourceBlocks}
           preview={preview}
-          renderSlot={renderSlot}
+          renderImages={renderImages}
           loadImage={loadImage}
           t={t}
         />
@@ -1653,7 +1712,7 @@ function MarkdownRecordContent({
         />
       )}
       <RecordAttachments blocks={record.cell.sourceBlocks} preview={preview}
-        renderSlot={renderSlot} loadImage={loadImage} t={t} />
+        renderImages={renderImages} loadImage={loadImage} t={t} />
     </div>
   )
 }
@@ -1722,7 +1781,7 @@ function RecordPayload({
   record,
   direction,
   preview = false,
-  renderSlot,
+  renderImages,
   loadImage,
   stringWrapping,
   t,
@@ -1730,7 +1789,7 @@ function RecordPayload({
   record: TableRecord
   direction: 'input' | 'output'
   preview?: boolean
-  renderSlot: PropsRenderSlots<'conversation.trajectory.images'>['renderSlot']
+  renderImages: TrajectoryImageRenderer
   loadImage: MessageImageLoader
   stringWrapping: JsonTreeProps['stringWrapping']
   t: TrajectoryTranslate
@@ -1772,7 +1831,7 @@ function RecordPayload({
         error={error}
         errorDetail={error ? value : undefined}
         preview={preview}
-        renderSlot={renderSlot}
+        renderImages={renderImages}
         loadImage={loadImage}
       />
     )
@@ -2086,6 +2145,78 @@ function OverviewSection({
   )
 }
 
+interface SubagentRecordRowProps {
+  record: TableRecord
+  subagent: SubagentRowState
+  action: TrajectorySubagentAction
+  rowIndex: number
+  virtualPosition: number | undefined
+  showTurnRail: boolean
+  timelineFocus: 'inside' | 'outside' | undefined
+  onToggle: () => void
+  renderSubagent: ((link: TrajectorySubagentLink) => ReactNode) | undefined
+  t: TrajectoryTranslate
+}
+
+function subagentDisclosureCopy(
+  action: TrajectorySubagentAction,
+  expanded: boolean,
+): { readonly aria: TrajectoryKey; readonly text: TrajectoryKey } {
+  if (action === 'open') return { aria: 'subagent.openAria', text: 'subagent.open' }
+  return expanded
+    ? { aria: 'subagent.hideAria', text: 'subagent.hide' }
+    : { aria: 'subagent.showAria', text: 'subagent.show' }
+}
+
+function SubagentRecordRow({
+  record, subagent, action, rowIndex, virtualPosition, showTurnRail, timelineFocus, onToggle, renderSubagent, t,
+}: SubagentRecordRowProps) {
+  const { row, link, expanded } = subagent
+  const label = link.label ?? link.address.childSessionId
+  const copy = subagentDisclosureCopy(action, expanded)
+  return (
+    <tr
+      aria-rowindex={rowIndex}
+      data-subagent-row={row}
+      data-trajectory-row-key={trajectoryVirtualRecordKey(record)}
+      data-virtual-position={virtualPosition}
+      data-turn-end={record.turnEnd || undefined}
+      data-timeline-focus={timelineFocus}
+    >
+      <td className={css.event}>
+        {showTurnRail && <span className={css.turnRail} aria-hidden="true" />}
+      </td>
+      {row === 'toggle'
+        ? (
+          <td className={css.content}>
+            <button
+              type="button"
+              className={css.subagentToggle}
+              aria-expanded={action === 'expand' ? expanded : undefined}
+              aria-label={t(copy.aria, { label })}
+              onClick={onToggle}
+            >
+              <IconChevronRightOutlineRegular
+                className={expanded ? `${css.subagentChevron} ${css.subagentChevronOpen}` : css.subagentChevron}
+                size={12}
+              />
+              <span className={css.subagentKind}>{t('subagent.kind')}</span>
+              <span className={css.subagentLabel} title={label}>{label}</span>
+              <span className={css.subagentAction}>{t(copy.text)}</span>
+            </button>
+          </td>
+        )
+        : (
+          <td className={css.subagentPanelCell}>
+            <section className={css.subagentPanel} aria-label={t('subagent.panelAria', { label })}>
+              {renderSubagent?.(link)}
+            </section>
+          </td>
+        )}
+    </tr>
+  )
+}
+
 /**
  * Render trajectory events as a dense ledger with turn and step separators.
  * Clicking ledger whitespace clears the active record or request selection.
@@ -2096,7 +2227,7 @@ export function TrajectoryTable({
   watchToolResult,
   t,
   stringWrapping,
-  renderSlot,
+  renderImages,
   loadImage,
   requestNumbers: sessionRequestNumbers,
   turns,
@@ -2121,6 +2252,11 @@ export function TrajectoryTable({
   onToggleTool,
   inspectCallId = null,
   onInspectApplied,
+  subagentLinks = NO_SUBAGENT_LINKS,
+  subagentAction = 'expand',
+  expandedSubagents = NO_EXPANDED_SUBAGENTS,
+  onToggleSubagent,
+  renderSubagent,
 }: TrajectoryTableProps) {
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   const [selectedRequest, setSelectedRequest] = useState<SelectedRequest | null>(null)
@@ -2195,7 +2331,7 @@ export function TrajectoryTable({
     () => indexRequestNumbers(sessionRequestNumbers),
     [sessionRequestNumbers],
   )
-  const records = useMemo(() => {
+  const foldedRecords = useMemo(() => {
     if (searchMatchIndexes !== null) return filterRecords(allRecords, searchMatchIndexes)
     const turnRecords = collapsedTurns.size === 0
       ? allRecords
@@ -2207,6 +2343,10 @@ export function TrajectoryTable({
       ? assistantRecords
       : collapseCallRecords(assistantRecords, collapsedTools, 'tool', t)
   }, [allRecords, collapsedAssistants, collapsedTools, collapsedTurns, requestGroups, searchMatchIndexes, t])
+  const records = useMemo(
+    () => insertSubagentRecords(foldedRecords, subagentLinks, expandedSubagents),
+    [expandedSubagents, foldedRecords, subagentLinks],
+  )
   const projectedVirtualRows = useMemo(
     () => groupTrajectoryVirtualRows(records),
     [records],
@@ -2241,7 +2381,7 @@ export function TrajectoryTable({
     const indexes = new Map<string, number>()
     for (const [virtualIndex, row] of projectedVirtualRows.entries()) {
       for (const entry of row.entries) {
-        if (entry.record.collapsedSummary === undefined) {
+        if (entry.record.collapsedSummary === undefined && entry.record.subagent === undefined) {
           indexes.set(trajectoryRecordId(entry.record.cell), virtualIndex)
         }
       }
@@ -2738,6 +2878,25 @@ export function TrajectoryTable({
                 t={t}
               >
                 {({ displayText, listDisplayText, resultText, toolCallOnly, toolCallText }) => {
+                  const subagentRow = record.subagent
+                  if (subagentRow !== undefined) {
+                    return (
+                      <SubagentRecordRow
+                        record={record}
+                        subagent={subagentRow}
+                        action={subagentAction}
+                        rowIndex={position + 1 + historyRowOffset}
+                        virtualPosition={virtualizationEnabled ? position : undefined}
+                        showTurnRail={record.turn !== null && activeTurn === record.turn}
+                        timelineFocus={timelineFocusIndexes === null
+                          ? undefined
+                          : timelineFocusIndexes.has(record.cell.index) ? 'inside' : 'outside'}
+                        onToggle={() => { onToggleSubagent?.(trajectoryRecordId(record.cell), subagentRow.link) }}
+                        renderSubagent={renderSubagent}
+                        t={t}
+                      />
+                    )
+                  }
                   const summaryKind = record.collapsedSummaryKind
                   const isCollapsedSummary = summaryKind !== undefined
                   const isRequestOnly = record.cell.requestOnly === true
@@ -3358,7 +3517,7 @@ export function TrajectoryTable({
                   >
                     <MarkdownRecordContent
                       record={selected}
-                      renderSlot={renderSlot}
+                      renderImages={renderImages}
                       loadImage={loadImage}
                       rendered
                       thinkingExpanded={thinkingExpanded}
@@ -3486,7 +3645,7 @@ export function TrajectoryTable({
                           <OverviewSection label={t('tab.preview')} onOpen={() => { activateTab('rendered') }}>
                             <MarkdownRecordContent
                               record={selected}
-                              renderSlot={renderSlot}
+                              renderImages={renderImages}
                               loadImage={loadImage}
                               rendered
                               preview
@@ -3502,12 +3661,12 @@ export function TrajectoryTable({
                         <>
                           {selected.cell.inputDetail && (
                             <OverviewSection label={t('tab.payload')} onOpen={() => { activateTab('input') }}>
-                              <RecordPayload record={selected} direction="input" preview renderSlot={renderSlot} loadImage={loadImage} stringWrapping={stringWrapping} t={t} />
+                              <RecordPayload record={selected} direction="input" preview renderImages={renderImages} loadImage={loadImage} stringWrapping={stringWrapping} t={t} />
                             </OverviewSection>
                           )}
                           {selected.cell.outputDetail && (
                             <OverviewSection label={t('tab.result')} onOpen={() => { activateTab('output') }}>
-                              <RecordPayload record={selected} direction="output" preview renderSlot={renderSlot} loadImage={loadImage} stringWrapping={stringWrapping} t={t} />
+                              <RecordPayload record={selected} direction="output" preview renderImages={renderImages} loadImage={loadImage} stringWrapping={stringWrapping} t={t} />
                             </OverviewSection>
                           )}
                           <OverviewSection label={t('tab.schema')} onOpen={() => { activateTab('schema') }}>
@@ -3536,7 +3695,7 @@ export function TrajectoryTable({
             {!promptSelected && selected !== undefined && activeTab === 'rendered' && (
               <MarkdownRecordContent
                 record={selected}
-                renderSlot={renderSlot}
+                renderImages={renderImages}
                 loadImage={loadImage}
                 rendered
                 thinkingExpanded={thinkingExpanded}
@@ -3548,7 +3707,7 @@ export function TrajectoryTable({
             {!promptSelected && selected !== undefined && activeTab === 'raw' && (
               <MarkdownRecordContent
                 record={selected}
-                renderSlot={renderSlot}
+                renderImages={renderImages}
                 loadImage={loadImage}
                 rendered={false}
                 thinkingExpanded={thinkingExpanded}
@@ -3562,7 +3721,7 @@ export function TrajectoryTable({
             )}
             {!promptSelected && selected !== undefined && activeTab === 'input' && (
               selectedProgram === undefined
-                ? <RecordPayload record={selected} direction="input" renderSlot={renderSlot} loadImage={loadImage} stringWrapping={stringWrapping} t={t} />
+                ? <RecordPayload record={selected} direction="input" renderImages={renderImages} loadImage={loadImage} stringWrapping={stringWrapping} t={t} />
                 : <ProgramInput key={`input:${selectedRecordId}`} program={selectedProgram}
                   initialWrapped={codeWrappingOnOpen}
                   stringWrapping={stringWrapping} t={t} />
@@ -3587,11 +3746,11 @@ export function TrajectoryTable({
                       <h3 className={css.resultTitle}>{t('record.renderedResult')}</h3>
                     </header>
                     {selectedProgram === undefined
-                      ? <RecordPayload record={selected} direction="output" renderSlot={renderSlot} loadImage={loadImage} stringWrapping={stringWrapping} t={t} />
+                      ? <RecordPayload record={selected} direction="output" renderImages={renderImages} loadImage={loadImage} stringWrapping={stringWrapping} t={t} />
                       : <ProgramOutput record={selected} stringWrapping={stringWrapping} t={t} />}
                   </section>
                 </div>
-                : <RecordPayload record={selected} direction="output" renderSlot={renderSlot} loadImage={loadImage} stringWrapping={stringWrapping} t={t} />
+                : <RecordPayload record={selected} direction="output" renderImages={renderImages} loadImage={loadImage} stringWrapping={stringWrapping} t={t} />
             )}
             {!promptSelected && selected !== undefined && activeTab === 'schema' && (
               <RecordSchema record={selected} stringWrapping={stringWrapping} t={t} />

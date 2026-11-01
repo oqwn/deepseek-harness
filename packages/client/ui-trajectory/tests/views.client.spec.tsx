@@ -8,7 +8,9 @@ import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
  * event ledger with its timing overview, and fiber disposal removes the tab.
  * Timeline projection and inclusive focus edge cases ride along.
  */
-import type { GlobalStandardProps, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  GlobalStandardProps, PropsRenderFactories, RenderFactorySlot,
+} from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { createElement, type ComponentProps, type FC, type ReactNode } from 'react'
@@ -51,6 +53,8 @@ import {
 import { createTrajectoryDurationStore } from '../src/client/duration-store.ts'
 import { EMPTY_TRAJECTORY_SNAPSHOT } from '../src/client/trajectory-snapshot-builder.ts'
 import type { TrajectorySnapshot } from '../src/client/trajectory-contract.ts'
+import type { TrajectorySubagentLink } from '../src/client/trajectory-subagent.ts'
+import type { TrajectoryContentProps } from '../src/client/TrajectoryContent.tsx'
 import { deriveTrajectoryTimeline } from '../src/client/timeline.ts'
 import { t as tTrajectory, tZh } from './locale.client.ts'
 
@@ -207,47 +211,22 @@ type StandaloneBaseProps = Omit<
   'useSession' | 'useTrajectory' | 'useDuration' | 'loadOlder' | 'setActualDuration'
 >
 
-/** Standalone view props: the session-scope standard kit the outlet would bake. */
+/** Session Provider twin: Factory twin renders keep the surrounding binding. */
+const passThroughProvider = (({ children }: { children?: ReactNode }) => <>{children}</>) as
+  TrajectoryContentProps['SessionProvider']
+
+/** Standalone presentation props: the Session kit and callbacks a content host would supply. */
 function standaloneProps(
-  nodes: LegacyConversationSlice['nodes'],
+  _nodes: LegacyConversationSlice['nodes'],
 ): StandaloneBaseProps {
-  const trajectory = historySnapshot(nodes)
-  const input = createSnapshotStore<InputState>({
-    draft: '', attachmentIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
-  })
-  const inputActions: InputActions = {
-    insertQuote: () => false,
-    captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
-    insertText: () => false,
-    setDraft: () => {},
-    persistDraft: () => {},
-    addAttachments: () => false,
-    removeAttachment: () => {},
-    pruneAttachments: () => {},
-    submit: () => {},
-  }
   return {
     sessionId: SID,
-    useChat: bindSnapshotSelector(createSnapshotStore(EMPTY_CHAT_SNAPSHOT)),
-    useSessions: emptySessions(),
-    usePanelInfo, useResource,
-    useSessionStatus: bindSnapshotSelector(
-      createSnapshotStore<SessionStatusSnapshot>(new Map()),
-    ),
-    useSessionRetainInfo: () => undefined,
-    useWorkspaces: emptyWorkspaces(),
-    ...allowAllAccess,
-    useContextMenu: contextMenuHook(),
-    useConversation: bindSnapshotSelector(createSnapshotStore(conversationSnapshot(trajectory))),
-    useInput: bindSnapshotSelector(input),
-    inputActions,
     useProjection,
-    inspectCall: undefined,
     viewRequest: null,
-    openView: () => {},
     completeViewRequest: () => {},
-    // Image seats the outlet would bake: standalone renders omit the gallery.
-    renderSlot: () => null,
+    // Standalone renders omit the image gallery and render no subagent panels.
+    renderImages: () => null,
+    subagents: { kind: 'expand', render: () => null },
     loadImage: () => Promise.reject(new Error('standalone views load no images')),
     // The locale seat the outlet would inject for the declared namespace.
     t: tZh,
@@ -260,7 +239,7 @@ type ConversationTargetSources = {
 }
 
 /** Real-stack bench: root Context + real SlotRegistry ring + the plugin fiber. */
-async function bench(snapshot = historySnapshot(NODES)) {
+async function bench(snapshot = historySnapshot(NODES), options: { readonly resources?: object } = {}) {
   const runtime = await SlotTestRuntime.create()
   runtime.remote.provideNamespaces({ toolResults: {} })
   runtimes.push(runtime)
@@ -309,14 +288,33 @@ async function bench(snapshot = historySnapshot(NODES)) {
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
   ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
   await runtime.mount(localePlugin)
+  if (options.resources !== undefined) ctx.provide('resources', options.resources as never)
   const provide = vi.spyOn(ctx.uiSession, 'provide')
+  const registerFactory = vi.spyOn(slots, 'registerFactory')
   const feature = await runtime.mount({ inject: [...inject], apply })
   const sourceDescriptor = provide.mock.calls[0]?.[0]
   if (sourceDescriptor === undefined) throw new Error('ui-trajectory did not provide its standard source')
+  const contentCall = registerFactory.mock.calls.find(([definition]) =>
+    (definition as { name: string }).name === 'conversation.trajectory.content')
+  if (contentCall === undefined) throw new Error('ui-trajectory did not register its content Factory')
+  const [contentDefinition, contentComponent] = contentCall as unknown as [TrajectoryContentRegistration, FC<object>]
+  const content = { ...contentDefinition, component: contentComponent }
   return {
     runtime, ctx, slots, feature, loadOlder, trajectoryStore, conversationStore,
-    events, views, sourceDescriptor, reference,
+    events, views, sourceDescriptor, reference, content,
   }
+}
+
+/** Runtime options and component recorded from the content Factory registration. */
+interface TrajectoryContentRegistration {
+  readonly name: string
+  readonly scope: string
+  readonly children: Readonly<Record<string, unknown>>
+  readonly inject: (sessionId: SessionId) => TrajectoryViewInjected
+}
+
+function hasContentFactory(slots: SlotRegistry): boolean {
+  return slots.snapshot().some(node => node.type === 'factory' && node.name === 'conversation.trajectory.content')
 }
 
 /** Tab projection twin of apply's viewTabs (the render-side consumption path). */
@@ -382,6 +380,27 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
     useInput,
     inputActions,
   }
+  // Minimal Factory twin: render the registered Trajectory content definition
+  // with the Session standard kit and its own injected controls.
+  const renderFactorySlot: RenderFactorySlot = (name, input): ReactNode => {
+    if (name !== fixture.content.name) return null
+    const Content = fixture.content.component
+    const trajectory = fixture.content.inject(SID)
+    return (
+      <Content
+        {...standardProps}
+        loadOlder={trajectory.loadOlder}
+        loadImage={trajectory.loadImage}
+        setActualDuration={trajectory.setActualDuration}
+        useDuration={bindSnapshotSelector(trajectory.hooks.duration)}
+        renderSlot={() => null}
+        SessionProvider={passThroughProvider}
+        renderFactorySlot={renderFactorySlot}
+        t={tZh}
+        {...input}
+      />
+    )
+  }
   // Minimal outlet twin: resolve the ring entry by the `only` filter and
   // render it with the session standard kit (what SlotOutlet does for a
   // list-kind session slot, minus machinery).
@@ -389,30 +408,12 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
     const entry = slots.entries('conversation.view').find(e => e.options.id === opts?.only)
     if (entry === undefined) return null
     if (!isConvViewOwner(owner)) throw new Error('trajectory fixture expected Conversation view owner props')
-    const View = entry.component as FC<ConvViewProps>
-    const injectEntry = entry.inject as ((sessionId: SessionId) => object) | undefined
-    const injected = injectEntry === undefined
-      ? {}
-      : injectEntry(SID)
-    const injectedProps = 'hooks' in injected
-      ? (() => {
-        const trajectory = injected as TrajectoryViewInjected
-        return {
-          loadOlder: trajectory.loadOlder,
-          loadImage: trajectory.loadImage,
-          setActualDuration: trajectory.setActualDuration,
-          useDuration: bindSnapshotSelector(trajectory.hooks.duration),
-          t: tZh,
-        }
-      })()
-      : injected
-    const viewProps: ConvViewProps & Pick<PropsRenderSlots<'conversation.trajectory.images'>, 'renderSlot'> = {
-      ...owner, ...standardProps, renderSlot: () => null,
-    }
+    const View = entry.component as FC<ConvViewProps & PropsRenderFactories>
     return (
       <View
-        {...viewProps}
-        {...injectedProps}
+        {...owner}
+        {...standardProps}
+        renderFactorySlot={renderFactorySlot}
         key={key}
       />
     )
@@ -468,6 +469,38 @@ describe('plugin registration', () => {
     expect(b.views.entries()).toEqual([])
   })
 
+  it('registers the content Factory, its declared Slots, and the shipped subagent entry, and removes them on disposal', async () => {
+    const b = await bench()
+    expect(b.content.scope).toBe('session')
+    expect(b.content.children).toEqual({
+      'conversation.trajectory.images': { kind: 'single', scope: 'session' },
+      'conversation.trajectory.subagent': { kind: 'single', scope: 'session' },
+    })
+    expect(hasContentFactory(b.slots)).toBe(true)
+    expect(b.slots.spec('conversation.trajectory.images')).toBeDefined()
+    const [subagentEntry] = b.slots.entries('conversation.trajectory.subagent')
+    expect(subagentEntry?.inject).toBe(b.content.inject)
+    const entry = b.slots.entries('conversation.view').find(candidate => candidate.options.id === 'trajectory')
+    expect(entry?.inject).toBeUndefined()
+
+    await b.feature.dispose()
+
+    expect(hasContentFactory(b.slots)).toBe(false)
+    expect(b.slots.spec('conversation.trajectory.images')).toBeUndefined()
+    expect(b.slots.spec('conversation.trajectory.subagent')).toBeUndefined()
+  })
+
+  it('registers the subagent Session resource while the resources service is present', async () => {
+    const unregister = vi.fn()
+    const register = vi.fn((_provider: { readonly protocol: string }) => unregister)
+    const b = await bench(historySnapshot(NODES), { resources: { register } })
+
+    expect(register).toHaveBeenCalledOnce()
+    expect(register.mock.calls[0]?.[0].protocol).toBe('trajectorysubagent')
+    await b.feature.dispose()
+    expect(unregister).toHaveBeenCalledOnce()
+  })
+
   it('keeps one total standard source for a Session binding', async () => {
     const b = await bench()
     using reference = b.runtime.sessions.retain(SID)
@@ -493,12 +526,7 @@ describe('plugin registration', () => {
 
   it('shares one browser-wide duration preference across session injections', async () => {
     const b = await bench()
-    const entry = b.slots.entries('conversation.view')
-      .find(candidate => candidate.options.id === 'trajectory')
-    expect(entry).toBeDefined()
-    const injectEntry = entry!.inject as unknown as (
-      sessionId: SessionId,
-    ) => TrajectoryViewInjected
+    const injectEntry = b.content.inject
     const first = injectEntry(SID)
     await b.runtime.sessions.add({ id: 's2' })
     using reference = b.runtime.sessions.retain('s2' as SessionId)
@@ -514,12 +542,7 @@ describe('plugin registration', () => {
 
   it('reports whether loading older history changed the Trajectory snapshot', async () => {
     const b = await bench()
-    const entry = b.slots.entries('conversation.view')
-      .find(candidate => candidate.options.id === 'trajectory')
-    const injectEntry = entry!.inject as unknown as (
-      sessionId: SessionId,
-    ) => TrajectoryViewInjected
-    const injected = injectEntry(SID)
+    const injected = b.content.inject(SID)
 
     expect(await injected.loadOlder()).toBe(false)
 
@@ -1718,4 +1741,90 @@ describe('TrajectoryView state', () => {
     )).toBeTruthy()
   })
 
+})
+
+describe('subagent expansion', () => {
+  const CHILD = '7e17d76b-ee79-49f7-bc83-986d13bb5f92' as SessionId
+  const subagentNodes: LegacyConversationSlice['nodes'] = [
+    { kind: 'user', seq: 1, time: 1_000, content: [], source: null },
+    {
+      kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1,
+      blocks: [{ kind: 'tool-call', callId: 'delegate', name: 'subagent', argsRaw: '{"description":"Like a video"}' }],
+    },
+    {
+      kind: 'tool-result', seq: 4, time: 2_500, callId: 'delegate',
+      name: 'subagent', args: PartialArguments.fromText('{}'),
+      call: { name: 'subagent', argsRaw: '{}' }, callTime: 2_100,
+      content: [{ type: 'text', text: `started subagent ${CHILD}` }], isError: false, subCalls: [],
+    },
+  ]
+  const catalogProjection = ((key: string, selector?: (value: unknown) => unknown) => {
+    const value = key === 'subagentCatalog'
+      ? [{ id: CHILD, createdAt: 2_200, mode: 'one-shot', label: 'Like a video' }]
+      : undefined
+    return selector === undefined ? value : selector(value)
+  }) as UseProjection
+
+  const childLink = {
+    address: { parentSessionId: SID, childSessionId: CHILD, mode: 'one-shot' as const },
+    label: 'Like a video',
+  }
+
+  function subagentProps() {
+    return {
+      ...standaloneProps(subagentNodes),
+      ...standaloneHistory(historySnapshot(subagentNodes)),
+      ...standaloneDuration(),
+      useProjection: catalogProjection,
+    }
+  }
+
+  it('expands a delegation record into a caller-rendered panel and collapses it again', () => {
+    const renderPanel = vi.fn((link: TrajectorySubagentLink) =>
+      <div data-testid="child-panel">{link.address.childSessionId}</div>)
+    const view = render(<TrajectoryView {...subagentProps()} subagents={{ kind: 'expand', render: renderPanel }} />)
+    const root = view.container.firstElementChild
+    expect(root?.hasAttribute('data-conversation-composer-overlay')).toBe(true)
+    expect(root?.hasAttribute('data-trajectory-nested')).toBe(false)
+
+    const show = screen.getByRole('button', { name: '展开子智能体轨迹：Like a video' })
+    expect(show.getAttribute('aria-expanded')).toBe('false')
+    expect(show.textContent).toBe('子智能体Like a video展开轨迹')
+    expect(renderPanel).not.toHaveBeenCalled()
+
+    fireEvent.click(show)
+
+    const hide = screen.getByRole('button', { name: '收起子智能体轨迹：Like a video' })
+    expect(hide.getAttribute('aria-expanded')).toBe('true')
+    const panel = screen.getByRole('region', { name: '子智能体轨迹：Like a video' })
+    expect(within(panel).getByTestId('child-panel').textContent).toBe(CHILD)
+    expect(renderPanel).toHaveBeenLastCalledWith(childLink)
+
+    fireEvent.click(hide)
+
+    expect(screen.queryByRole('region', { name: '子智能体轨迹：Like a video' })).toBeNull()
+    expect(screen.getByRole('button', { name: '展开子智能体轨迹：Like a video' })).toBeTruthy()
+  })
+
+  it('asks the surrounding panel to open a linked subagent without expanding a row', () => {
+    const open = vi.fn()
+    const view = render(<TrajectoryView {...subagentProps()} nested subagents={{ kind: 'open', open }} />)
+    const root = view.container.firstElementChild
+    expect(root?.hasAttribute('data-trajectory-nested')).toBe(true)
+    expect(root?.hasAttribute('data-conversation-composer-overlay')).toBe(false)
+
+    const disclosure = screen.getByRole('button', { name: '打开子智能体轨迹：Like a video' })
+    expect(disclosure.hasAttribute('aria-expanded')).toBe(false)
+    expect(disclosure.textContent).toBe('子智能体Like a video打开轨迹')
+
+    fireEvent.click(disclosure)
+
+    expect(open).toHaveBeenCalledWith(childLink)
+    expect(screen.queryByRole('region', { name: /子智能体轨迹/ })).toBeNull()
+  })
+
+  it('shows no subagent disclosure without a matching catalog child', () => {
+    render(<TrajectoryView {...subagentProps()} useProjection={useProjection} />)
+    expect(screen.queryByRole('button', { name: /子智能体轨迹/ })).toBeNull()
+  })
 })

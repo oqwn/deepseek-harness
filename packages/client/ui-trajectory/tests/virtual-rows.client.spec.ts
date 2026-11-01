@@ -92,4 +92,19 @@ describe('trajectory virtual rows', () => {
       'message%00call%00call%20with%20spaces%2Fand%3Fpunctuation',
     )
   })
+
+  it('sizes and keys subagent disclosure and panel rows apart from their linked record', () => {
+    const linked = record(2, { kind: 'tool', callId: 'delegate' })
+    const toggle = { ...linked, subagent: { row: 'toggle' as const } }
+    const panel = { ...linked, subagent: { row: 'panel' as const } }
+
+    const rows = groupTrajectoryVirtualRows([linked, toggle, panel])
+
+    expect(rows.map(row => row.height)).toEqual([30, 24, 480])
+    expect(rows.map(row => row.key)).toEqual([
+      'tool%00call%00delegate',
+      'tool%00call%00delegate\u0000subagent\u0000toggle',
+      'tool%00call%00delegate\u0000subagent\u0000panel',
+    ])
+  })
 })

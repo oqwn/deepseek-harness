@@ -1,9 +1,12 @@
 import type {
   AssistantMessageNode, AssistantTiming, ConversationLocation, ConversationNode, ConversationPromptSnapshot,
-  ConversationViewNode, MessageImagesOwnerProps, PartialAssistant, RequestPromptChange,
+  ConversationViewNode, ConvViewOwnerProps, MessageImagesOwnerProps, PartialAssistant, RequestPromptChange,
   RequestView, RunningToolCall, SystemPromptNode, ToolCallBlock,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ReactNode } from 'react'
+import type { TrajectorySubagentLink } from './trajectory-subagent.ts'
+import type { TrajectoryViewInjected } from './TrajectoryView.tsx'
 
 /** Request-header facts retained by the Trajectory target. */
 export interface TrajectoryRequestHeaderState {
@@ -80,6 +83,22 @@ export interface TrajectorySnapshot {
 /** Selector hook over the current Conversation binding's Trajectory target. */
 export type UseTrajectory = SnapshotSelectorHook<TrajectorySnapshot>
 
+/** Caller-owned input for one Session's Trajectory content occurrence. */
+export interface TrajectoryContentInput {
+  /** Focus request addressed to the Trajectory View. */
+  readonly viewRequest: ConvViewOwnerProps['viewRequest']
+  /** Acknowledge the current focus request. */
+  readonly completeViewRequest: () => void
+}
+
+/** Parent-owned capabilities for one subagent Session shown inside a parent ledger panel. */
+export interface TrajectorySubagentOwnerProps {
+  /** Render one durable image group through the parent's `conversation.trajectory.images` Slot. */
+  readonly renderImages: (owner: MessageImagesOwnerProps) => ReactNode
+  /** Show a subagent created by the displayed Session in the same panel. */
+  readonly openSubagent: (link: TrajectorySubagentLink) => void
+}
+
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ConversationViewSnapshotMap {
     /** Independently assembled data consumed by the Trajectory view. */
@@ -93,6 +112,25 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     useTrajectory: UseTrajectory
   }
 
+  interface SlotFactoryMap {
+    /**
+     * One Session's Trajectory toolbar, overview, ledger, and inspector,
+     * rendered by the Trajectory View for its own Session. Expanded subagent
+     * records render `conversation.trajectory.subagent` beneath a Session
+     * Provider bound to the child.
+     */
+    'conversation.trajectory.content': {
+      scope: 'session'
+      props: TrajectoryContentInput
+      inject: TrajectoryViewInjected
+      locale: 'trajectory'
+      children: {
+        'conversation.trajectory.images': { kind: 'single'; scope: 'session' }
+        'conversation.trajectory.subagent': { kind: 'single'; scope: 'session' }
+      }
+    }
+  }
+
   interface SlotMap {
     /**
      * Renderer for one group of durable record images in the Trajectory
@@ -101,5 +139,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * images are omitted.
      */
     'conversation.trajectory.images': { kind: 'single'; scope: 'session'; owner: MessageImagesOwnerProps }
+    /**
+     * One subagent Session's Trajectory inside an expanded parent ledger
+     * panel, bound to that child Session. The shipped entry renders the
+     * child's ledger, routes images through the owner, and opens deeper
+     * subagents in the same panel. A registration replaces that renderer.
+     */
+    'conversation.trajectory.subagent': { kind: 'single'; scope: 'session'; owner: TrajectorySubagentOwnerProps }
   }
 }

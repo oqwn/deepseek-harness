@@ -29,7 +29,7 @@ function Harness({ cell = CELL, getDefault = () => false, setDefault = () => {} 
 }) {
   return <TrajectoryTable
     turns={[{ turn: 1, groups: [{ title: 'Step 1', cells: [cell] }] }]}
-    renderSlot={() => null} loadImage={async () => 'blob:unused'} t={t}
+    renderImages={() => null} loadImage={async () => 'blob:unused'} t={t}
     stringWrapping={{ label: 'Wrap lines', getDefault, setDefault }}
     collapsedTurns={new Set()} onToggleTurn={() => {}}
     collapsedAssistants={new Set()} onToggleAssistant={() => {}}

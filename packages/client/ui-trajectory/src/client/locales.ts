@@ -204,6 +204,18 @@ export const zh = {
   'layout.toolsRemovedCount': '移除 {count} 个',
   'layout.systemPromptAndToolsUpdated': '系统提示词和工具已更新',
   'layout.compactionInterrupted': '上下文压缩在完成前被中断。',
+  'subagent.kind': '子智能体',
+  'subagent.show': '展开轨迹',
+  'subagent.hide': '收起轨迹',
+  'subagent.showAria': '展开子智能体轨迹：{label}',
+  'subagent.hideAria': '收起子智能体轨迹：{label}',
+  'subagent.panelAria': '子智能体轨迹：{label}',
+  'subagent.opening': '正在打开子智能体会话…',
+  'subagent.unavailable': '此页面无法打开子智能体会话。',
+  'subagent.failed': '无法打开子智能体会话（{code}）。',
+  'subagent.open': '打开轨迹',
+  'subagent.openAria': '打开子智能体轨迹：{label}',
+  'subagent.path': '子智能体路径',
 } as const
 
 /** The trajectory dictionary key union. */
@@ -421,6 +433,18 @@ export const en: Record<TrajectoryKey, string> = {
   'layout.toolsRemovedCount': '{count} removed',
   'layout.systemPromptAndToolsUpdated': 'System Prompt and Tools Updated',
   'layout.compactionInterrupted': 'Compaction was interrupted before completion.',
+  'subagent.kind': 'Subagent',
+  'subagent.show': 'Show trajectory',
+  'subagent.hide': 'Hide trajectory',
+  'subagent.showAria': 'Show subagent trajectory: {label}',
+  'subagent.hideAria': 'Hide subagent trajectory: {label}',
+  'subagent.panelAria': 'Subagent trajectory: {label}',
+  'subagent.opening': 'Opening subagent session…',
+  'subagent.unavailable': 'This page cannot open subagent sessions.',
+  'subagent.failed': 'The subagent session could not be opened ({code}).',
+  'subagent.open': 'Open trajectory',
+  'subagent.openAria': 'Open subagent trajectory: {label}',
+  'subagent.path': 'Subagent path',
 }
 
 /** Japanese copy, checked against the English keys. */
@@ -624,6 +648,18 @@ export const ja = {
   'layout.toolsRemovedCount': '{count} 件削除',
   'layout.systemPromptAndToolsUpdated': 'システムプロンプトとツールを更新',
   'layout.compactionInterrupted': '圧縮は完了前に中断されました。',
+  'subagent.kind': 'サブエージェント',
+  'subagent.show': '軌跡を表示',
+  'subagent.hide': '軌跡を隠す',
+  'subagent.showAria': 'サブエージェントの軌跡を表示：{label}',
+  'subagent.hideAria': 'サブエージェントの軌跡を隠す：{label}',
+  'subagent.panelAria': 'サブエージェントの軌跡：{label}',
+  'subagent.opening': 'サブエージェントのセッションを開いています…',
+  'subagent.unavailable': 'このページではサブエージェントのセッションを開けません。',
+  'subagent.failed': 'サブエージェントのセッションを開けませんでした（{code}）。',
+  'subagent.open': '軌跡を開く',
+  'subagent.openAria': 'サブエージェントの軌跡を開く：{label}',
+  'subagent.path': 'サブエージェントのパス',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -827,6 +863,18 @@ export const es = {
   'layout.toolsRemovedCount': '{count} eliminado',
   'layout.systemPromptAndToolsUpdated': 'Aviso del sistema y herramientas actualizadas',
   'layout.compactionInterrupted': 'La compactación se interrumpió antes de finalizar.',
+  'subagent.kind': 'Subagente',
+  'subagent.show': 'Mostrar trayectoria',
+  'subagent.hide': 'Ocultar trayectoria',
+  'subagent.showAria': 'Mostrar trayectoria del subagente: {label}',
+  'subagent.hideAria': 'Ocultar trayectoria del subagente: {label}',
+  'subagent.panelAria': 'Trayectoria del subagente: {label}',
+  'subagent.opening': 'Abriendo la sesión del subagente…',
+  'subagent.unavailable': 'Esta página no puede abrir sesiones de subagentes.',
+  'subagent.failed': 'No se pudo abrir la sesión del subagente ({code}).',
+  'subagent.open': 'Abrir trayectoria',
+  'subagent.openAria': 'Abrir trayectoria del subagente: {label}',
+  'subagent.path': 'Ruta de subagentes',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -1030,6 +1078,18 @@ export const fr = {
   'layout.toolsRemovedCount': '{count} supprimé',
   'layout.systemPromptAndToolsUpdated': 'Invite système et outils mis à jour',
   'layout.compactionInterrupted': 'Le compactage a été interrompu avant la fin.',
+  'subagent.kind': 'Sous-agent',
+  'subagent.show': 'Afficher la trajectoire',
+  'subagent.hide': 'Masquer la trajectoire',
+  'subagent.showAria': 'Afficher la trajectoire du sous-agent : {label}',
+  'subagent.hideAria': 'Masquer la trajectoire du sous-agent : {label}',
+  'subagent.panelAria': 'Trajectoire du sous-agent : {label}',
+  'subagent.opening': 'Ouverture de la session du sous-agent…',
+  'subagent.unavailable': 'Cette page ne peut pas ouvrir les sessions de sous-agents.',
+  'subagent.failed': "La session du sous-agent n'a pas pu être ouverte ({code}).",
+  'subagent.open': 'Ouvrir la trajectoire',
+  'subagent.openAria': 'Ouvrir la trajectoire du sous-agent : {label}',
+  'subagent.path': 'Chemin des sous-agents',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -1233,6 +1293,18 @@ export const de = {
   'layout.toolsRemovedCount': '{count} entfernt',
   'layout.systemPromptAndToolsUpdated': 'Systemaufforderung und Tools aktualisiert',
   'layout.compactionInterrupted': 'Die Verdichtung wurde vor der Fertigstellung unterbrochen.',
+  'subagent.kind': 'Subagent',
+  'subagent.show': 'Ausführungsverlauf anzeigen',
+  'subagent.hide': 'Ausführungsverlauf ausblenden',
+  'subagent.showAria': 'Ausführungsverlauf des Subagenten anzeigen: {label}',
+  'subagent.hideAria': 'Ausführungsverlauf des Subagenten ausblenden: {label}',
+  'subagent.panelAria': 'Ausführungsverlauf des Subagenten: {label}',
+  'subagent.opening': 'Subagenten-Sitzung wird geöffnet…',
+  'subagent.unavailable': 'Diese Seite kann keine Subagenten-Sitzungen öffnen.',
+  'subagent.failed': 'Die Subagenten-Sitzung konnte nicht geöffnet werden ({code}).',
+  'subagent.open': 'Ausführungsverlauf öffnen',
+  'subagent.openAria': 'Ausführungsverlauf des Subagenten öffnen: {label}',
+  'subagent.path': 'Subagentenpfad',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -1436,6 +1508,18 @@ export const ru = {
   'layout.toolsRemovedCount': '{count} удален.',
   'layout.systemPromptAndToolsUpdated': 'Системная подсказка и инструменты обновлены',
   'layout.compactionInterrupted': 'Уплотнение было прервано до завершения.',
+  'subagent.kind': 'Субагент',
+  'subagent.show': 'Показать траекторию',
+  'subagent.hide': 'Скрыть траекторию',
+  'subagent.showAria': 'Показать траекторию субагента: {label}',
+  'subagent.hideAria': 'Скрыть траекторию субагента: {label}',
+  'subagent.panelAria': 'Траектория субагента: {label}',
+  'subagent.opening': 'Открытие сеанса субагента…',
+  'subagent.unavailable': 'На этой странице нельзя открыть сеансы субагентов.',
+  'subagent.failed': 'Не удалось открыть сеанс субагента ({code}).',
+  'subagent.open': 'Открыть траекторию',
+  'subagent.openAria': 'Открыть траекторию субагента: {label}',
+  'subagent.path': 'Путь субагентов',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -1639,4 +1723,16 @@ export const pt = {
   'layout.toolsRemovedCount': '{count} removido',
   'layout.systemPromptAndToolsUpdated': 'Prompt do sistema e ferramentas atualizadas',
   'layout.compactionInterrupted': 'A compactação foi interrompida antes da conclusão.',
+  'subagent.kind': 'Subagente',
+  'subagent.show': 'Mostrar trajetória',
+  'subagent.hide': 'Ocultar trajetória',
+  'subagent.showAria': 'Mostrar trajetória do subagente: {label}',
+  'subagent.hideAria': 'Ocultar trajetória do subagente: {label}',
+  'subagent.panelAria': 'Trajetória do subagente: {label}',
+  'subagent.opening': 'Abrindo a sessão do subagente…',
+  'subagent.unavailable': 'Esta página não pode abrir sessões de subagentes.',
+  'subagent.failed': 'Não foi possível abrir a sessão do subagente ({code}).',
+  'subagent.open': 'Abrir trajetória',
+  'subagent.openAria': 'Abrir trajetória do subagente: {label}',
+  'subagent.path': 'Caminho de subagentes',
 } satisfies Record<keyof typeof en, string>

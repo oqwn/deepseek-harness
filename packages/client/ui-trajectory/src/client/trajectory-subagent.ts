@@ -4,6 +4,8 @@ import type {
   ISessions, SessionReference,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
+// Type-only: declares the `conversation` retain facet requested below.
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SubagentAddress, SubagentCatalogEntry } from '@deepseek-ai/dsh-subagent/client'
 import type { TrajectoryTurnModel } from './layout.ts'
@@ -148,7 +150,10 @@ function waitForAbort(signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Retain the addressed subagent Session while its resource has a holder.
+ * Retain the addressed subagent Session while its resource has a holder. The
+ * reference holds the `conversation` facet because the panel renders the
+ * Session: without it, Conversation assembly drops the fold and the panel's
+ * Trajectory stays empty even though the event window is loaded.
  * @param sessions - Client Session service that owns references.
  * @returns Provider yielding one reference and releasing it when the resource closes.
  */
@@ -161,7 +166,9 @@ export function trajectorySubagentResourceProvider(sessions: ISessions): Resourc
         throw new Error(`ui-trajectory: invalid subagent resource address "${resourceAddress}"`)
       }
       if (signal.aborted) return
-      const reference = sessions.retain(address, { source: 'trajectorySubagent', signal })
+      const reference = sessions.retain(address, {
+        source: 'trajectorySubagent', facets: { conversation: true }, signal,
+      })
       try {
         yield { ok: true, value: { address, reference } }
         await waitForAbort(signal)

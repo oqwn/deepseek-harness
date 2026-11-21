@@ -169,7 +169,7 @@ describe('Trajectory subagent resource address', () => {
 })
 
 describe('Trajectory subagent resource provider', () => {
-  it('retains the child for the resource lifetime and releases it on close', async () => {
+  it('retains the rendered child with its conversation facet for the resource lifetime and releases it on close', async () => {
     const release = vi.fn()
     const reference = { sessionId: CHILD, release, [Symbol.dispose]: release } as unknown as SessionReference
     const retain = vi.fn(() => reference)
@@ -179,7 +179,9 @@ describe('Trajectory subagent resource provider', () => {
     const controller = new AbortController()
     const stream = provider.open(trajectorySubagentAddress(ADDRESS), { signal: controller.signal })[Symbol.asyncIterator]()
     expect(await stream.next()).toEqual({ done: false, value: { ok: true, value: { address: ADDRESS, reference } } })
-    expect(retain).toHaveBeenCalledWith(ADDRESS, { source: 'trajectorySubagent', signal: controller.signal })
+    expect(retain).toHaveBeenCalledWith(ADDRESS, {
+      source: 'trajectorySubagent', facets: { conversation: true }, signal: controller.signal,
+    })
     const completion = stream.next()
     await Promise.resolve()
     expect(release).not.toHaveBeenCalled()

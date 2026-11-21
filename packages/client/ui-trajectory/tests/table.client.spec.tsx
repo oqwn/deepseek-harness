@@ -1639,8 +1639,8 @@ describe('subagent rows', () => {
   const linkedCell = SUBAGENT_TURNS[0]!.groups[0]!.cells[1]!
   const linkId = trajectoryRecordId(linkedCell)
   const address = {
-    parentSessionId: SessionId('parent'),
-    childSessionId: SessionId('child-1'),
+    parentSessionId: brandString<SessionId>('parent'),
+    childSessionId: brandString<SessionId>('child-1'),
     mode: 'one-shot' as const,
   }
   const links = new Map([[linkId, { address, label: 'Like a video' }]])

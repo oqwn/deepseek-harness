@@ -39,9 +39,30 @@ async function collect(events: AsyncIterable<AssistantMessageEvent>): Promise<{ 
   return { partials, final }
 }
 
+/**
+ * pi-ai parses streamed arguments incrementally (each piece is read once, so a
+ * multi-megabyte stream costs time linear in its length), which means every
+ * partial carries what has arrived so far. This pins what the adapter relies
+ * on: one partial per delta, content that only grows and is always a prefix of
+ * the final value, and a last partial that already holds all of it.
+ */
+function expectGrowingPrefixes(partials: readonly unknown[]): void {
+  expect(partials).toHaveLength(fragments.length)
+  let seen = 0
+  for (const partial of partials) {
+    const content = (partial as { content?: unknown }).content
+    if (content === undefined) continue
+    expect(typeof content).toBe('string')
+    expect(args.content.startsWith(content as string)).toBe(true)
+    expect((content as string).length).toBeGreaterThanOrEqual(seen)
+    seen = (content as string).length
+  }
+  expect((partials.at(-1) as { content?: unknown }).content).toBe(args.content)
+}
+
 const context = normalizeContext({ messages: [{ role: 'user', content: 'hi', timestamp: 0 }] })
 
-describe('streamed tool-call arguments (patched pi-ai)', () => {
+describe('streamed tool-call arguments', () => {
   it('preserves an empty Responses message after parallel tool calls with its replay metadata', async () => {
     const calls = [0, 1, 2].map(index => ({ type: 'function_call', call_id: `call_${index}`, id: `item_${index}`, name: 'read', arguments: '{}' }))
     const empty = { type: 'message', id: 'message_empty', role: 'assistant', content: [{ type: 'output_text', text: '', annotations: [] }] }
@@ -71,7 +92,7 @@ describe('streamed tool-call arguments (patched pi-ai)', () => {
     expect(server.requests).toHaveLength(1)
   })
 
-  it('openai-completions parses arguments once, at the end of the call', async () => {
+  it('openai-completions grows arguments incrementally and finalizes them exactly', async () => {
     const server = await mockServer([{ events: [
       JSON.stringify({ choices: [{
         delta: {
@@ -88,12 +109,11 @@ describe('streamed tool-call arguments (patched pi-ai)', () => {
     ] }])
     const events = streamCompletions(model('openai-completions', server.url), context, { apiKey: 'test-key' })
     const { partials, final } = await collect(events)
-    expect(partials).toHaveLength(fragments.length)
-    expect(partials.every(partial => JSON.stringify(partial) === '{}')).toBe(true)
+    expectGrowingPrefixes(partials)
     expect(final).toEqual(args)
   })
 
-  it('anthropic-messages parses arguments once, at the end of the call', async () => {
+  it('anthropic-messages grows arguments incrementally and finalizes them exactly', async () => {
     const server = await mockServer([{ events: [
       anthropicMessageStart,
       frame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'write', input: {} } }),
@@ -106,12 +126,11 @@ describe('streamed tool-call arguments (patched pi-ai)', () => {
     ] }])
     const events = streamAnthropic(model('anthropic-messages', server.url), context, { apiKey: 'test-key' })
     const { partials, final } = await collect(events)
-    expect(partials).toHaveLength(fragments.length)
-    expect(partials.every(partial => JSON.stringify(partial) === '{}')).toBe(true)
+    expectGrowingPrefixes(partials)
     expect(final).toEqual(args)
   })
 
-  it('openai-responses parses arguments once, at the end of the call', async () => {
+  it('openai-responses grows arguments incrementally and finalizes them exactly', async () => {
     const item = { type: 'function_call', call_id: 'call_1', id: 'fc_1', name: 'write' }
     const server = await mockServer([{ events: [
       '{"type":"response.created","response":{"id":"resp_1"}}',
@@ -125,8 +144,7 @@ describe('streamed tool-call arguments (patched pi-ai)', () => {
     ] }])
     const events = streamResponses(model('openai-responses', server.url), context, { apiKey: 'test-key' })
     const { partials, final } = await collect(events)
-    expect(partials).toHaveLength(fragments.length)
-    expect(partials.every(partial => JSON.stringify(partial) === '{}')).toBe(true)
+    expectGrowingPrefixes(partials)
     expect(final).toEqual(args)
   })
 })

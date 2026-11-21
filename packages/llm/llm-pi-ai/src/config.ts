@@ -268,12 +268,23 @@ const thinkingBudgets = z.object({
 })
 
 /**
+ * {@link ChatTemplateKwargValue} without the explicit `| undefined` that
+ * pi-schema adds to its optional members. schemastery types an absent member
+ * as absent rather than as `undefined`, and under
+ * `exactOptionalPropertyTypes` the two encodings are not interchangeable, so
+ * the schema is checked against the value shape alone.
+ */
+type ChatTemplateKwargEntry = ChatTemplateKwargValue extends infer V
+  ? V extends object ? { [K in keyof V]: Exclude<V[K], undefined> } : V
+  : never
+
+/**
  * One `chat_template_kwargs` or `chat_template_args` value. The `$var` member
  * is pi-ai's placeholder for a value dispatch fills from the request's
  * thinking state, which makes a template-driven gateway configurable without
  * restating its template.
  */
-const chatTemplateKwarg: z<ChatTemplateKwargValue> = z.union([
+const chatTemplateKwargEntry: z<ChatTemplateKwargEntry> = z.union([
   z.string(),
   z.number(),
   z.boolean(),
@@ -283,6 +294,15 @@ const chatTemplateKwarg: z<ChatTemplateKwargValue> = z.union([
     omitWhenOff: z.boolean(),
   }),
 ])
+
+/**
+ * The schema above, typed as upstream spells the value. The annotation above
+ * is the checked half: a member pi-ai adds to the union fails it. This cast
+ * changes only how absence is encoded (`omitWhenOff?: boolean` versus
+ * `omitWhenOff?: boolean | undefined`), which schemastery's `default`
+ * parameter would otherwise reject under `exactOptionalPropertyTypes`.
+ */
+const chatTemplateKwarg = chatTemplateKwargEntry as unknown as z<ChatTemplateKwargValue>
 
 const compatProfile: z<PiAiCompatProfile> = z.object({
   supportsStore: z.boolean(),

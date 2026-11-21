@@ -273,6 +273,13 @@ const COMPLETIONS_COMPAT_GATE = {
   supportsMidConvoSystemMessages: 'withhold',
   supportsMidConvoToolAdditions: 'withhold',
   sessionAffinityFormat: 'withhold',
+  // pi-ai 1.6.0 additions that no profile field or documentation exposes yet.
+  // They are classified here so the drift gate holds, not because the installed
+  // catalog sets them for a named vendor; promote one to 'offer' together with a
+  // documented PiAiCompatProfile field.
+  requiresNonNullAssistantContent: 'withhold',
+  requiresToolsWithToolHistory: 'withhold',
+  promptCacheKeyMode: 'withhold',
 } as const satisfies Record<keyof OpenAICompletionsCompat, CompatDisposition>
 
 /** Disposition of every `OpenAIResponsesCompat` field; a drift gate like the one above. */
@@ -288,6 +295,11 @@ const RESPONSES_COMPAT_GATE = {
   supportsExplicitPromptCacheMode: 'withhold',
   supportsMidConvoSystemMessages: 'withhold',
   supportsMidConvoEffort: 'withhold',
+  // pi-ai 1.6.0 additions that no profile field or documentation exposes yet.
+  // They are classified here so the drift gate holds, not because the installed
+  // catalog sets them for a named vendor; promote one to 'offer' together with a
+  // documented PiAiCompatProfile field.
+  promptCacheKeyMode: 'withhold',
 } as const satisfies Record<keyof OpenAIResponsesCompat, CompatDisposition>
 
 /** Disposition of every `AnthropicMessagesCompat` field; a drift gate like the one above. */
@@ -305,6 +317,11 @@ const ANTHROPIC_COMPAT_GATE = {
   supportsMidConvoToolChanges: 'withhold',
   supportsMidConvoEffort: 'withhold',
   allowedFallbackModels: 'withhold',
+  // pi-ai 1.6.0 additions that no profile field or documentation exposes yet.
+  // They are classified here so the drift gate holds, not because the installed
+  // catalog sets them for a named vendor; promote one to 'offer' together with a
+  // documented PiAiCompatProfile field.
+  supportsMessageThreads: 'withhold',
 } as const satisfies Record<keyof AnthropicMessagesCompat, CompatDisposition>
 
 /** Disposition of every `BedrockCompat` field; a drift gate like the one above. */
@@ -315,6 +332,11 @@ const BEDROCK_COMPAT_GATE = {
 /** Disposition of every `MistralConversationsCompat` field. */
 const MISTRAL_COMPAT_GATE = {
   supportsMidConvoSystemMessages: 'withhold',
+  // pi-ai 1.6.0 additions that no profile field or documentation exposes yet.
+  // They are classified here so the drift gate holds, not because the installed
+  // catalog sets them for a named vendor; promote one to 'offer' together with a
+  // documented PiAiCompatProfile field.
+  supportsStrictMode: 'withhold',
 } as const satisfies Record<keyof MistralConversationsCompat, CompatDisposition>
 
 /**
@@ -483,6 +505,15 @@ type AssertTrue<T extends true> = T
 type UpstreamCompat = OpenAICompletionsCompat & OpenAIResponsesCompat & AnthropicMessagesCompat & BedrockCompat & MistralConversationsCompat
 
 /**
+ * The offered upstream fields without the explicit `| undefined` their
+ * optional members carry since pi-ai moved to pi-schema. Under
+ * `exactOptionalPropertyTypes` that is a different type from the profile's
+ * plain `?:`, yet it encodes absence rather than a value type, so it is
+ * stripped before the profile is compared with upstream.
+ */
+type UpstreamOffered = { [K in OfferedCompatField]?: Exclude<UpstreamCompat[K], undefined> }
+
+/**
  * Proof that each documented field carries its upstream type, not a hand-copied
  * restatement of it. The name gates above pin *which* fields exist; this pins
  * their types, in both directions because each catches a different drift. A
@@ -490,10 +521,13 @@ type UpstreamCompat = OpenAICompletionsCompat & OpenAIResponsesCompat & Anthropi
  * `resolveModelCompat`'s cast to `ModelCompat` would hide it; a narrower one
  * refuses a value the provider accepts, which is how an upgrade that widens a
  * union would otherwise leave configuration silently behind.
+ *
+ * The upstream side is compared through {@link UpstreamOffered}, which drops
+ * the explicit `| undefined` its optional fields carry.
  */
 export type EveryProfileFieldMatchesUpstream = AssertTrue<
-  PiAiCompatProfile extends Partial<Pick<UpstreamCompat, OfferedCompatField>>
-    ? Partial<Pick<UpstreamCompat, OfferedCompatField>> extends PiAiCompatProfile ? true : false
+  PiAiCompatProfile extends UpstreamOffered
+    ? UpstreamOffered extends PiAiCompatProfile ? true : false
     : false
 >
 

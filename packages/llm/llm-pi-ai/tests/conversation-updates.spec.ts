@@ -250,27 +250,34 @@ describe('historical tool availability on the wire', () => {
     })
   })
 
-  it('loads Codex tool additions through tool-search output', async () => {
+  it('declares Codex tool additions in additional_tools items', async () => {
     // Codex extracts an account id from the token before contacting the mock server.
     const payload = Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'fixture-account' } })).toString('base64url')
     const token = `e30.${payload}.fixture`
     const update = addition()
-    const { requests } = await send('openai-codex', 'gpt-5.5', {
+    const { requests } = await send('openai-codex', 'gpt-5.6-sol', {
       messages: [user('first'), update], tools: [baseline, added],
       toolHistory: { tools: [baseline], updates: [{ messageId: update.id, additions: [added] }] },
     }, token)
     expect(requests).toHaveLength(1)
+    // pi-ai 1.6 declares every tool in `additional_tools` items when the model
+    // takes them and mid-conversation system messages: the baseline at the head
+    // of the input, later additions beside the message that made them. Nothing
+    // goes in the top-level `tools`, and tool-search output is not used.
+    expect(requests[0]).not.toHaveProperty('tools')
+    const incrementalNotice: unknown = expect.stringContaining('incremental tools update')
     expect(requests[0]).toMatchObject({
-      tools: [{ type: 'function', name: 'read' }],
       input: [
+        { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'read' }] },
         { role: 'user', content: [{ type: 'input_text', text: 'first' }] },
-        { type: 'tool_search_call', execution: 'client', arguments: { query: 'search', limit: 1 } },
-        { type: 'tool_search_output', execution: 'client', tools: [
-          { type: 'function', name: 'search', description: added.description, parameters: added.parameters, defer_loading: true },
+        { role: 'developer', content: incrementalNotice },
+        { type: 'additional_tools', role: 'developer', tools: [
+          { type: 'function', name: 'search', description: added.description, parameters: added.parameters },
         ] },
         { role: 'developer', content: 'Instruction one.\nInstruction two.' },
       ],
     })
+    expect(JSON.stringify(requests[0])).not.toContain('tool_search')
   })
 
   it('retains removed declarations and reactivates them through Anthropic history', async () => {
@@ -293,6 +300,32 @@ describe('historical tool availability on the wire', () => {
   it('rebuilds the Responses baseline after its immediate tool is removed', async () => {
     const update = addition()
     const remove = createDeveloperMessage({ source: { kind: 'tool-registry' }, content: [{ type: 'tool-removal', toolName: 'read' }] })
+    const { requests } = await send('openai', 'gpt-5.6-sol', {
+      messages: [user('first'), update, remove], tools: [added],
+      toolHistory: { tools: [baseline], updates: [
+        { messageId: update.id, additions: [added] }, { messageId: remove.id, additions: [] },
+      ] },
+    })
+    expect(requests).toHaveLength(1)
+    // The rebuilt baseline holds only the surviving tool, declared at the head
+    // of the input rather than in the top-level `tools`.
+    expect(requests[0]).not.toHaveProperty('tools')
+    expect(requests[0]).toHaveProperty('input', [
+      { type: 'additional_tools', role: 'developer', tools: [expect.objectContaining({ name: 'search' })] },
+      { role: 'user', content: [{ type: 'input_text', text: 'first' }] },
+      { role: 'developer', content: 'Instruction one.\nInstruction two.' },
+    ])
+    expect(JSON.stringify(requests[0])).not.toContain('tool_removal')
+    expect(JSON.stringify(requests[0])).not.toContain('Read a file')
+  })
+
+  it('rebuilds the baseline without update messages on a Responses model that cannot carry tool updates', async () => {
+    // pi-ai 1.6's catalog gives gpt-5.4 neither `supportsAdditionalTools` nor
+    // `supportsToolSearch`, so the route has no tool-update mode: the current
+    // tools go in the top-level `tools` and developer update messages are
+    // dropped rather than sent to a model that cannot place them.
+    const update = addition()
+    const remove = createDeveloperMessage({ source: { kind: 'tool-registry' }, content: [{ type: 'tool-removal', toolName: 'read' }] })
     const { requests } = await send('openai', 'gpt-5.4', {
       messages: [user('first'), update, remove], tools: [added],
       toolHistory: { tools: [baseline], updates: [
@@ -303,9 +336,8 @@ describe('historical tool availability on the wire', () => {
     expect(requests[0]).toHaveProperty('tools', [expect.objectContaining({ name: 'search' })])
     expect(requests[0]).toHaveProperty('input', [
       { role: 'user', content: [{ type: 'input_text', text: 'first' }] },
-      { role: 'developer', content: 'Instruction one.\nInstruction two.' },
     ])
-    expect(JSON.stringify(requests[0])).not.toContain('tool_removal')
+    expect(JSON.stringify(requests[0])).not.toContain('additional_tools')
     expect(JSON.stringify(requests[0])).not.toContain('Read a file')
   })
 

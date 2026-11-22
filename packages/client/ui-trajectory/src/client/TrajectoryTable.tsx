@@ -2278,6 +2278,10 @@ export function TrajectoryTable({
   const loadingOlder = useRef(false)
   const [olderLoading, setOlderLoading] = useState(false)
   const olderLoadAnchor = useRef<OlderLoadAnchor | null>(null)
+  const historyLoadRowRef = useRef<HTMLTableRowElement>(null)
+  // History start (possibly unknown) at which a page brought nothing new, or null while paging
+  // progresses: automatic paging waits until the start moves.
+  const [stalledHistoryStartSeq, setStalledHistoryStartSeq] = useState<number | undefined | null>(null)
   const allRecords = useMemo(() => flattenRecords(turns), [turns])
   const streamingCellsByIndex = useMemo(
     () => new Map(streamingCells.map(cell => [cell.index, cell])),
@@ -2753,7 +2757,9 @@ export function TrajectoryTable({
       scrollTop: pane.scrollTop,
     }
     void onLoadOlder().then((advanced) => {
-      if (!advanced) olderLoadAnchor.current = null
+      if (advanced) return
+      olderLoadAnchor.current = null
+      setStalledHistoryStartSeq(historyStartSeq)
     }).finally(() => {
       loadingOlder.current = false
       setOlderLoading(false)
@@ -2791,6 +2797,32 @@ export function TrajectoryTable({
   ])
 
   const olderBusy = olderHistoryLoading || olderLoading
+  const olderPagingStalled = stalledHistoryStartSeq === historyStartSeq
+  // Page older history in by itself while the load row is on screen. Every settled page gets a
+  // fresh observer whose first report says whether the row is still visible, so a ledger too short
+  // to scroll (folded turns) keeps filling without a click. A page that brought nothing new, or an
+  // active search filter, leaves the next page to a scroll to the top or a click.
+  useEffect(() => {
+    const pane = tablePaneRef.current
+    const row = historyLoadRowRef.current
+    if (
+      pane === null || row === null || !tableScrollReady || olderBusy || olderPagingStalled
+      || searchMatchIndexes !== null || typeof IntersectionObserver === 'undefined'
+    ) return undefined
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some(entry => entry.isIntersecting)) requestOlder(pane, false)
+    }, { root: pane, rootMargin: `${OLDER_LOAD_THRESHOLD_PX}px 0px 0px 0px` })
+    observer.observe(row)
+    return () => { observer.disconnect() }
+  }, [
+    hasOlderRecords,
+    historyStartSeq,
+    olderBusy,
+    olderPagingStalled,
+    requestOlder,
+    searchMatchIndexes,
+    tableScrollReady,
+  ])
   const showInitialLoading = historyLoading || !tableScrollReady
   const historyRowOffset = hasOlderRecords ? 1 : 0
 
@@ -2831,6 +2863,7 @@ export function TrajectoryTable({
           <tbody>
             {hasOlderRecords && (
               <tr
+                ref={historyLoadRowRef}
                 className={css.historyLoadRow}
                 data-history-load=""
                 aria-rowindex={1}

@@ -19,6 +19,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { createToolResultWatcher } from './watch-tool-result.ts'
 import { createTrajectoryDurationStore } from './duration-store.ts'
 import { createTrajectoryStringWrappingStore } from './string-wrapping-store.ts'
+import { createTrajectoryTurnFoldStore } from './turn-fold-store.ts'
 import { en, ja, es, fr, de, ru, pt, NS, zh } from './locales.ts'
 import { registerTrajectoryAssistantDefinition } from './trajectory-assistant-definition.ts'
 import { registerTrajectoryCompactionDefinitions } from './trajectory-compaction-definition.ts'
@@ -80,6 +81,7 @@ export function apply(ctx: Context): void {
   const t = ctx.locale.bind(NS)
   const duration = createTrajectoryDurationStore()
   const stringWrapping = createTrajectoryStringWrappingStore()
+  const turnFold = createTrajectoryTurnFoldStore()
   registerTrajectoryMessageDefinitions(ctx)
   registerTrajectoryRequestHeaderDefinition(ctx)
   registerTrajectoryAssistantDefinition(ctx)
@@ -111,6 +113,10 @@ export function apply(ctx: Context): void {
       jsonStringWrapping: {
         getDefault: () => stringWrapping.getSnapshot(),
         setDefault: (value) => { stringWrapping.set(value) },
+      },
+      turnFolding: {
+        getDefault: () => turnFold.getSnapshot(),
+        setDefault: (collapsed) => { turnFold.set(collapsed) },
       },
       loadOlder: async () => {
         const before = trajectory.getSnapshot()

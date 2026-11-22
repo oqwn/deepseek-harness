@@ -78,10 +78,23 @@ function partialStructureSignature(partial: TrajectorySnapshot['partial']): stri
     : block.kind).join('\u0000')
 }
 
+/** How a ledger folds its turns: the mode the toolbar set, plus the turns the user flipped since. */
+interface TurnFold {
+  /** Whether turns fold unless the user opened them, including turns that page in or arrive later. */
+  readonly collapsed: boolean
+  /** Turns the user toggled away from the mode. */
+  readonly exceptions: ReadonlySet<number>
+}
+
 /** Session-bound controls not already supplied by the conversation view slot. */
 export interface TrajectoryViewInjected {
   /** Shared wrapping preference read by expansion handlers. */
   jsonStringWrapping?: Omit<NonNullable<JsonTreeProps['stringWrapping']>, 'label'>
+  /** Browser-wide turn fold mode: read when a ledger mounts, written by the toolbar's turn toggle. */
+  turnFolding?: {
+    readonly getDefault: () => boolean
+    readonly setDefault: (collapsed: boolean) => void
+  }
   hooks: {
     duration: SnapshotStore<boolean>
   }
@@ -168,9 +181,12 @@ export type TrajectoryViewProps =
 export function TrajectoryView({
   sessionId, useSession, useTrajectory, useProjection, useDuration, watchToolResult, loadOlder, loadImage,
   setActualDuration, viewRequest, completeViewRequest, nested = false, renderImages, subagents, t,
-  jsonStringWrapping,
+  jsonStringWrapping, turnFolding,
 }: TrajectoryViewProps) {
-  const [collapsedTurns, setCollapsedTurns] = useState<ReadonlySet<number>>(EMPTY_TURN_IDS)
+  const [turnFold, setTurnFold] = useState<TurnFold>(() => ({
+    collapsed: turnFolding?.getDefault() ?? false,
+    exceptions: EMPTY_TURN_IDS,
+  }))
   const [collapsedAssistants, setCollapsedAssistants] =
     useState<ReadonlySet<string>>(EMPTY_RECORD_IDS)
   const [collapsedTools, setCollapsedTools] = useState<ReadonlySet<string>>(EMPTY_RECORD_IDS)
@@ -494,6 +510,12 @@ export function TrajectoryView({
       .flatMap(turn => turn.turn === null ? [] : [turn.turn]),
     [timelineTurns],
   )
+  // Folded mode folds every turn the user has not opened, so turns that page in or arrive later
+  // render folded from their first frame; expanded mode folds only the turns the user closed.
+  const collapsedTurns = useMemo<ReadonlySet<number>>(() => turnFold.collapsed
+    ? new Set(collapsibleTurnIds.filter(turn => !turnFold.exceptions.has(turn)))
+    : turnFold.exceptions,
+  [collapsibleTurnIds, turnFold])
   const allTurnsCollapsed = collapsibleTurnIds.length > 0
     && collapsibleTurnIds.every(turn => collapsedTurns.has(turn))
   const collapsibleAssistantIds = useMemo(() => {
@@ -523,24 +545,19 @@ export function TrajectoryView({
     && collapsibleToolIds.every(id => collapsedTools.has(id))
 
   const toggleTurn = (turn: number) => {
-    setCollapsedTurns((current) => {
-      const collapsed = new Set(current)
-      if (collapsed.has(turn)) collapsed.delete(turn)
-      else collapsed.add(turn)
-      return collapsed
+    setTurnFold((current) => {
+      const exceptions = new Set(current.exceptions)
+      if (exceptions.has(turn)) exceptions.delete(turn)
+      else exceptions.add(turn)
+      return { collapsed: current.collapsed, exceptions }
     })
   }
 
   const toggleAllTurns = () => {
-    setCollapsedTurns((current) => {
-      const collapsed = new Set(current)
-      if (allTurnsCollapsed) {
-        for (const turn of collapsibleTurnIds) collapsed.delete(turn)
-      } else {
-        for (const turn of collapsibleTurnIds) collapsed.add(turn)
-      }
-      return collapsed
-    })
+    // The toolbar sets the fold mode for this ledger and the next ones; per-turn choices reset.
+    const collapsed = !allTurnsCollapsed
+    setTurnFold({ collapsed, exceptions: EMPTY_TURN_IDS })
+    turnFolding?.setDefault(collapsed)
   }
 
   const toggleAssistant = (id: string) => {

@@ -393,6 +393,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
         loadImage={trajectory.loadImage}
         setActualDuration={trajectory.setActualDuration}
         useDuration={bindSnapshotSelector(trajectory.hooks.duration)}
+        {...(trajectory.turnFolding === undefined ? {} : { turnFolding: trajectory.turnFolding })}
         renderSlot={() => null}
         SessionProvider={passThroughProvider}
         renderFactorySlot={renderFactorySlot}
@@ -554,6 +555,18 @@ describe('plugin registration', () => {
   })
 })
 
+/** One settled turn: its prompt at `seq` and a one-step text answer right after. */
+function turnNodes(turn: number, seq: number): LegacyConversationSlice['nodes'] {
+  return [
+    { kind: 'user', seq, time: seq * 1_000, content: [{ type: 'text', text: `question ${String(turn)}` }], source: null },
+    {
+      kind: 'assistant', seq: seq + 1, time: (seq + 1) * 1_000, turn, step: 1,
+      blocks: [{ kind: 'text', text: `answer ${String(turn)}` }],
+      timing: { stepStartTime: seq * 1_000 + 500, firstTokenTime: seq * 1_000 + 700, completedTime: (seq + 1) * 1_000 },
+    },
+  ]
+}
+
 describe('tab switching in ConversationRoot', () => {
   it('renders two tabs, defaults to chat, and switches to the trajectory ledger', async () => {
     const b = await bench()
@@ -576,6 +589,72 @@ describe('tab switching in ConversationRoot', () => {
     expect(b.loadOlder).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('tab', { name: 'Chat' }))
     expect(b.loadOlder).not.toHaveBeenCalled()
+  })
+
+  it('folds older turns that page in after every turn was collapsed', async () => {
+    const b = await bench(historySnapshot(turnNodes(2, 10)))
+    const view = mount(b)
+    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
+    fireEvent.click(screen.getByRole('button', { name: '收起所有轮次' }))
+    expect(view.container.querySelectorAll('[data-collapsed-summary="turn"]')).toHaveLength(1)
+
+    act(() => { b.trajectoryStore.set(historySnapshot([...turnNodes(1, 1), ...turnNodes(2, 10)])) })
+
+    expect(view.container.querySelectorAll('[data-collapsed-summary="turn"]')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: '展开所有轮次' })).toBeTruthy()
+  })
+
+  it('keeps turns that arrive later folded while a turn the user opened stays open', async () => {
+    const b = await bench(historySnapshot([...turnNodes(2, 10), ...turnNodes(3, 20)]))
+    const view = mount(b)
+    const summaries = () => view.container.querySelectorAll('[data-collapsed-summary="turn"]')
+    const answers = () => [...view.container.querySelectorAll('tr[data-kind="message"]')]
+      .map(row => row.textContent).join('|')
+    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
+    fireEvent.click(screen.getByRole('button', { name: '收起所有轮次' }))
+    expect(summaries()).toHaveLength(2)
+
+    fireEvent.click(screen.getAllByRole('row', { name: /收起的轮次/ }).at(-1)!)
+    expect(summaries()).toHaveLength(1)
+    expect(answers()).toContain('answer 3')
+    expect(screen.getByRole('button', { name: '收起所有轮次' })).toBeTruthy()
+
+    act(() => {
+      b.trajectoryStore.set(historySnapshot([
+        ...turnNodes(1, 1), ...turnNodes(2, 10), ...turnNodes(3, 20), ...turnNodes(4, 30),
+      ]))
+    })
+    // The older turn that paged in and the turn that arrived later both fold; turn 3 stays open.
+    expect(summaries()).toHaveLength(3)
+    expect(answers()).toContain('answer 3')
+    expect(answers()).not.toContain('answer 1')
+    expect(answers()).not.toContain('answer 4')
+
+    const prompt = [...view.container.querySelectorAll('tr[data-kind="user"]')]
+      .find(row => row.textContent?.includes('question 3'))
+    fireEvent.doubleClick(prompt!)
+    expect(summaries()).toHaveLength(4)
+    expect(screen.getByRole('button', { name: '展开所有轮次' })).toBeTruthy()
+  })
+
+  it('remembers the toolbar turn fold mode for the next ledger', async () => {
+    const b = await bench(historySnapshot(turnNodes(2, 10)))
+    const view = mount(b)
+    const summaries = () => view.container.querySelectorAll('[data-collapsed-summary="turn"]')
+    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
+    fireEvent.click(screen.getByRole('button', { name: '收起所有轮次' }))
+    expect(localStorage.getItem('dsh.trajectory.turnsCollapsed')).toBe('true')
+    expect(b.content.inject(SID).turnFolding?.getDefault()).toBe(true)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Chat' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
+    // The remounted ledger opens in the folded mode.
+    expect(summaries()).toHaveLength(1)
+    expect(screen.getByRole('button', { name: '展开所有轮次' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '展开所有轮次' }))
+    expect(summaries()).toHaveLength(0)
+    expect(localStorage.getItem('dsh.trajectory.turnsCollapsed')).toBe('false')
   })
 
   it('labels the trajectory tab in the active locale', async () => {

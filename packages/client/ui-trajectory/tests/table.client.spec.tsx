@@ -113,6 +113,42 @@ afterEach(() => {
   Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo')
 })
 
+/** The entry fields the ledger reads from an intersection report. */
+interface FakeIntersectionEntry {
+  readonly target: Element
+  readonly isIntersecting: boolean
+}
+
+/** IntersectionObserver double: records each observer and reports its rows on demand. */
+class FakeIntersectionObserver {
+  static instances: FakeIntersectionObserver[] = []
+  readonly observed: Element[] = []
+  disconnected = false
+  constructor(
+    readonly report: (entries: readonly FakeIntersectionEntry[]) => void,
+    readonly options: IntersectionObserverInit | undefined,
+  ) {
+    FakeIntersectionObserver.instances.push(this)
+  }
+
+  observe(element: Element): void { this.observed.push(element) }
+
+  disconnect(): void { this.disconnected = true }
+
+  /** Report every observed element as on screen or off screen. */
+  show(isIntersecting: boolean): void {
+    act(() => { this.report(this.observed.map(target => ({ target, isIntersecting }))) })
+  }
+}
+
+/** Install the observer double for one case and return the observers it creates. */
+function observeIntersections(): readonly FakeIntersectionObserver[] {
+  FakeIntersectionObserver.instances = []
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
+  onTestFinished(() => { vi.unstubAllGlobals() })
+  return FakeIntersectionObserver.instances
+}
+
 const TURNS: readonly TrajectoryTurnModel[] = [{
   turn: 1,
   groups: [{
@@ -720,6 +756,69 @@ describe('TrajectoryTable', () => {
     )
     expect(screen.queryByRole('button', { name: 'Load earlier history' })).toBeNull()
     expect(table.getAttribute('aria-rowcount')).toBe('3')
+  })
+
+  it('pages older history in by itself while the load row stays on screen', async () => {
+    const observers = observeIntersections()
+    let resolveOlder: ((advanced: boolean) => void) | undefined
+    const onLoadOlder = vi.fn(() => new Promise<boolean>((resolve) => { resolveOlder = resolve }))
+    const props = { turns: TURNS, ...FOLD_PROPS, hasOlderRecords: true, onLoadOlder }
+    const view = render(<TrajectoryTable {...props} historyStartSeq={10} />)
+
+    const pane = screen.getByRole('table').parentElement
+    const first = observers.at(-1)
+    expect(first?.observed).toEqual([view.container.querySelector('tr[data-history-load]')])
+    expect(first?.options).toEqual({ root: pane, rootMargin: '48px 0px 0px 0px' })
+    first?.show(false)
+    expect(onLoadOlder).not.toHaveBeenCalled()
+
+    first?.show(true)
+    expect(onLoadOlder).toHaveBeenCalledOnce()
+    expect(screen.getByRole('status').textContent).toBe('Loading earlier history…')
+    // The pending page holds no observer, so another report cannot stack a second request.
+    expect(first?.disconnected).toBe(true)
+    const pending = observers.length
+
+    await act(async () => { resolveOlder?.(true) })
+    view.rerender(<TrajectoryTable {...props} historyStartSeq={5} />)
+    // A settled page gets a fresh observer, whose first report pulls the next page while the row
+    // is still visible, as it is in a ledger too short to scroll.
+    expect(observers.length).toBeGreaterThan(pending)
+    expect(observers.at(-1)?.disconnected).toBe(false)
+    observers.at(-1)?.show(true)
+    expect(onLoadOlder).toHaveBeenCalledTimes(2)
+    await act(async () => { resolveOlder?.(true) })
+  })
+
+  it('leaves the next page to the user after one brings nothing new, and while searching', async () => {
+    const observers = observeIntersections()
+    const onLoadOlder = vi.fn(() => Promise.resolve(false))
+    const props = { turns: TURNS, ...FOLD_PROPS, hasOlderRecords: true, onLoadOlder }
+    const view = render(<TrajectoryTable {...props} historyStartSeq={10} />)
+    const loadButton = () => screen.getByRole('button', { name: 'Load earlier history' })
+
+    observers.at(-1)?.show(true)
+    const requested = observers.length
+    await waitFor(() => { expect(loadButton().hasAttribute('disabled')).toBe(false) })
+    expect(onLoadOlder).toHaveBeenCalledOnce()
+    // The row stays visible, but a stalled page leaves it unobserved instead of retrying in a loop.
+    expect(observers).toHaveLength(requested)
+    expect(observers.at(-1)?.disconnected).toBe(true)
+
+    fireEvent.click(loadButton())
+    expect(onLoadOlder).toHaveBeenCalledTimes(2)
+    await waitFor(() => { expect(loadButton().hasAttribute('disabled')).toBe(false) })
+    expect(observers).toHaveLength(requested)
+
+    // A page that moved the history start lifts the stall.
+    view.rerender(<TrajectoryTable {...props} historyStartSeq={5} />)
+    expect(observers).toHaveLength(requested + 1)
+    expect(observers.at(-1)?.disconnected).toBe(false)
+
+    // A search filter shows matches only, so paging under it waits for the user.
+    view.rerender(<TrajectoryTable {...props} historyStartSeq={5} searchMatchIndexes={new Set([1])} />)
+    expect(observers).toHaveLength(requested + 1)
+    expect(observers.at(-1)?.disconnected).toBe(true)
   })
 
   it('reflects an older page started outside the ledger in the persistent control', () => {

@@ -25,11 +25,11 @@ Trajectory 标签页让你以按轮次组织的事件记录表和交互式时间
 <a id="use-this-package"></a>
 ## 使用本包
 
-在对话视图环中打开 Trajectory 标签页，把 agent 活动作为事件记录表与时间线查看。初始尾部完成定位前，记录表会用明确的加载行遮住真实记录；更早的前缀仍未加载时，首行控件会在点击时加载一页更早的历史，并在该页加载期间显示共享 ongoing loading。
+在对话视图环中打开 Trajectory 标签页，把 agent 活动作为事件记录表与时间线查看。初始尾部完成定位前，记录表会用明确的加载行遮住真实记录；更早的前缀仍未加载时，首行控件会加载一页更早的历史，并在该页加载期间显示共享 ongoing loading。只要该控件出现在屏幕上，记录表就会自动请求这一页，因此短到无法滚动的记录表也会继续补齐；某一页没有带来新内容后，或搜索筛选生效期间，下一页要等点击或滚动到顶部。
 
 ### 检查记录
 
-工具栏可以分别折叠轮次、调用和子调用。子调用收起后，在父工具下保留一条摘要；点击摘要或按 Enter、空格键即可展开。搜索包含已折叠的子调用，从其他视图检查调用时会自动展开目标调用。 面板较窄时，工具栏按钮与搜索框会自动换行。
+工具栏可以分别折叠轮次、调用和子调用。收起所有轮次会设定一种折叠模式，浏览器会为之后打开的记录表记住它：之后加载进来或新出现的轮次同样收起，你手动展开或收起的轮次则保持你的选择，直到下一次用工具栏切换。子调用收起后，在父工具下保留一条摘要；点击摘要或按 Enter、空格键即可展开。搜索包含已折叠的子调用，从其他视图检查调用时会自动展开目标调用。 面板较窄时，工具栏按钮与搜索框会自动换行。
 
 调用按已记录的工具名识别。对于 `run_code` 和 `cua_run_code`，记录行展示程序说明，检查器显示带行号和语法高亮的源码。“代码”页提供换行、查看原始 JSON 参数的 `{}` 切换按钮，以及保留末尾换行的源码原样复制。复制原始参数时保留记录中 JSON 的空白。每个新打开的代码视图采用上次选择的换行状态；切换时，其他已打开视图保持原状。输出保留记录中的文本，完整 JSON 对象或数组使用树形展示。高亮从已记录的工具 Schema 中读取开头的 `Execute a program in` 语言声明及旧式 `code` 参数说明，仅支持 TypeScript 和 Python。提示缺失或冲突，或明确声明了其他语言时，显示纯文本源码；工具说明后文的示例不影响语言选择。
 
@@ -73,7 +73,7 @@ Trajectory 标签页让你以按轮次组织的事件记录表和交互式时间
 
 完整的追加提示词在请求头未加载时显示为独立系统行；仅提供已知文本，不推断请求选项或工具目录。补入其请求历史后，该独立展示被替代而不重复提示词。历史中的系统提示词变更与最近的请求状态比较，包括没有新请求头的先前提示词更新。每个请求保留其所在位置生效的提示词与变更。包括压缩在内的 surface 替换会恢复最后一个非空的存活系统提示词，即使没有新的系统事件；未加载的提示词在对应分页到达前仍不可用。
 
-视图条目渲染会话作用域的 `conversation.trajectory.content` Factory。该 Factory 声明 `conversation.trajectory.images` 与 `conversation.trajectory.subagent`，并提供历史分页、图片加载、实时工具结果和时长偏好等逐会话控件。展开的子智能体行读取本插件拥有的 `trajectorysubagent` 资源，其提供方以来源 `trajectorySubagent` 并带 `conversation` 保留 facet 持有一个 `SessionReference`，直到资源关闭；该行在绑定到此引用的 Session Provider 下渲染 `conversation.trajectory.subagent`。对话组装只在有引用持有该 facet 时才折叠会话的事件窗口，缺少它时，即使事件窗口已加载，面板也只会显示空记录表。渲染器禁止在 Factory 自身的实例内再次渲染该 Factory，因此由这个会话作用域的 Slot（而不是 Factory）承载所有嵌套层级。它的 owner props 携带父级的图片渲染函数和 `openSubagent` 回调；内置条目为子会话获得同样的逐会话控件，不预留浮动 composer 的空间，并通过该回调报告更深层的子智能体记录。
+视图条目渲染会话作用域的 `conversation.trajectory.content` Factory。该 Factory 声明 `conversation.trajectory.images` 与 `conversation.trajectory.subagent`，并提供历史分页、图片加载、实时工具结果、时长偏好和轮次折叠模式等逐会话控件。展开的子智能体行读取本插件拥有的 `trajectorysubagent` 资源，其提供方以来源 `trajectorySubagent` 并带 `conversation` 保留 facet 持有一个 `SessionReference`，直到资源关闭；该行在绑定到此引用的 Session Provider 下渲染 `conversation.trajectory.subagent`。对话组装只在有引用持有该 facet 时才折叠会话的事件窗口，缺少它时，即使事件窗口已加载，面板也只会显示空记录表。渲染器禁止在 Factory 自身的实例内再次渲染该 Factory，因此由这个会话作用域的 Slot（而不是 Factory）承载所有嵌套层级。它的 owner props 携带父级的图片渲染函数和 `openSubagent` 回调；内置条目为子会话获得同样的逐会话控件，不预留浮动 composer 的空间，并通过该回调报告更深层的子智能体记录。
 
 Trajectory 的 Host 插件拥有 `ctx.sessionToolResults` 服务及其 `toolResults.watch` Remote 流，按 Session 与结果事件序号查看成功调用经过策略处理后的最终值。值仅保存在具体活跃 Session 实例的内存中：卸载 Session 会清除待关联及已提交的值，并使打开的检查器失效。冷读、恢复的会话、fork 及导出不会恢复或继承值；只要原实例仍存活，新检查器或重连就能读取已保留的值。卸载 Trajectory 插件也会清空所有值；即使 Session 仍存活，重新挂载也从空状态开始。Host 配置 `maxResultsPerSession` 默认为 1000，必须是正整数。待关联及已提交的结果共用每个 Session 的条数上限；新结果会淘汰最老的条目，并通知打开的检查器。待关联值提交后移至末尾；查看结果不会延长其保留时间。此上限按条数计量，不统计字节。此能力不写 Session 事件或投影 checkpoint。浏览器只订阅选中的结果，普通读取失败不影响渲染内容的查看。
 

@@ -375,7 +375,7 @@ describe('empty state and footer', () => {
   })
 
   it('renders every published turn with a summary and an expand-all button', () => {
-    mount({ turns: [turn({ turn: 1 }), turn({ turn: 2 }), turn({ turn: 3 })], stepCount: 0 })
+    mount({ turns: [turn({ turn: 2 }), turn({ turn: 3 }), turn({ turn: 4 })], stepCount: 0 })
     expect(screen.getByText(say('summary', { turns: 3, steps: 0 }))).toBeTruthy()
     expect(bodyRows()).toHaveLength(3)
     expect(button(say('expand.all')).disabled).toBe(false)
@@ -403,9 +403,9 @@ describe('empty state and footer', () => {
 })
 
 describe('older history', () => {
-  /** Two settled turns, so one scroll can request an older page. */
+  /** Two settled turns after turn 1, so one scroll can request an older page. */
   function twoTurns(): StatsSnapshot {
-    return { turns: [turn({ turn: 1 }), turn({ turn: 2 })], stepCount: 2 }
+    return { turns: [turn({ turn: 2 }), turn({ turn: 3 })], stepCount: 2 }
   }
 
   it('prefetches one older page on the first content commit in a real scrollport', async () => {
@@ -491,9 +491,20 @@ describe('older history', () => {
     await act(async () => { fireEvent.scroll(scroller) })
     expect(loadOlder).toHaveBeenCalledTimes(1)
     expect(screen.queryByText(say('loadOlder.done'))).toBeNull()
-    expect(screen.getByRole('button', { name: say('loadOlder') })).toBeTruthy()
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: say('loadOlder') })) })
+    // The trigger stays retryable and says that the last request brought nothing new.
+    expect(screen.queryByRole('button', { name: say('loadOlder') })).toBeNull()
+    expect(screen.getByRole('button', { name: say('loadOlder.retry') })).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: say('loadOlder.retry') })) })
     expect(loadOlder).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports the start of history instead of a trigger once turn 1 is on screen', () => {
+    const loadOlder = vi.fn(async (): Promise<LoadOlderResult> => 'grew')
+    mount({ turns: [turn({ turn: 1 }), turn({ turn: 2 })], stepCount: 0 }, loadOlder)
+    expect(screen.getByText(say('loadOlder.done'))).toBeTruthy()
+    expect(screen.queryByRole('button', { name: say('loadOlder') })).toBeNull()
+    fireEvent.scroll(scrollRegion())
+    expect(loadOlder).not.toHaveBeenCalled()
   })
 
   it('keeps the trigger available after a rejected page', async () => {

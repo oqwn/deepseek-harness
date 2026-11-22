@@ -101,7 +101,7 @@ kind: "package-reference"
 - **默认产品不挂载。** Web 包按规则拒绝引用 experimental 包；可选的「开发者工具」组合包（`@deepseek-ai/dsh-experimental-inspector-profile`）会挂载本视图，也可以由 profile 显式添加。
 - **窗口被截断时没有起始时刻。** 已加载窗口从半步中间开始时，首 token、模型用时和总用时都推导不出来；行上标「起止未知」，不估算。
 - **Code-Mode 内层调用按根调用上下文并回步骤。** 内层调用不带 turn/step，因此每个根调用各自开一个以 root call id 为键的上下文，由 builder 把它的派发并回持有 runner 的那一步。窗口里丢了派发起点时仍会合并调用，但无法给出它们各自的实测耗时。
-- **更早历史的加载结果显式区分重试。** 页面请求只返回 `grew`、`exhausted` 或 `retry`；如果 Chat 或轨迹视图正在加载同一个 Session 的页，统计视图会保留加载按钮，而不是误报历史已耗尽或抛出错误。
+- **更早历史的加载结果显式区分重试。** 页面请求只返回 `grew`、`exhausted` 或 `retry`；如果 Chat 或轨迹视图正在加载同一个 Session 的页，统计视图会保留加载按钮，而不是误报历史已耗尽或抛出错误。返回 `retry` 时，按钮文字会改为说明没有加载到新的轮次；第 1 轮已经显示时，控件直接说明已到历史开头，不再提供加载按钮。
 - **已知限制：没有整段墙钟 projection。** 合计行的总用时用模型用时 + 工具用时替代，因为宿主 projection 没有整段墙钟；工具段是逐调用求和，并行调用会让这段显得比非重叠墙钟更长。这里作为已知限制记录，插件不为此改动宿主逻辑。
 - **本实验 PR 的 recorded-session 覆盖已获豁免。** 包测试覆盖折叠、聚合、格式化、分页与 jsdom 表格；`apps/web/tests/client-ui-stats-panel.e2e.ts` 通过仅测试用的 overlay 挂载 shipped Web 表面并比较已提交的 ARIA golden。经 owner 决定，本实验 PR 不新增 keyless recorded-session 场景；后续 profile 或 bundle 转正时必须补充。
 - **迟到重投不是轮次。** 压缩可能把被裁剪的工具结果按原来的轮次/步骤在之后重新投递；窗口里既没有加载到的起点、也没有问题或结束标记的轮次会被丢弃，不再显示成空的幽灵行。

@@ -40,6 +40,7 @@ export function StatsView(props: StatsViewProps): ReactElement {
   const [loading, setLoading] = useState(false)
   const [exhausted, setExhausted] = useState(false)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [noProgress, setNoProgress] = useState(false)
   const [visibleTurns, setVisibleTurns] = useState<ReadonlySet<number>>(() => new Set())
   const scrollRef = useRef<HTMLDivElement>(null)
   const loadingRef = useRef(false)
@@ -48,6 +49,8 @@ export function StatsView(props: StatsViewProps): ReactElement {
   const autoLoaded = useRef(false)
   const turns = snapshot.turns
   const firstTurn = turns[0]?.turn ?? null
+  // Turn numbers start at 1, so a window that already shows turn 1 has no older turn to load.
+  const atStart = firstTurn === 1
   const latestTurn = turns.at(-1)?.turn ?? null
   const isTurnOpen = (turnNumber: number): boolean =>
     view.openTurns[turnNumber] ?? defaultTurnOpen(view.mode, turnNumber, latestTurn)
@@ -111,13 +114,14 @@ export function StatsView(props: StatsViewProps): ReactElement {
     })
   }
   const requestOlder = async (): Promise<void> => {
-    if (loadingRef.current || exhausted || turns.length === 0) return
+    if (loadingRef.current || exhausted || atStart || turns.length === 0) return
     const element = scrollRef.current
     /* v8 ignore next -- the scrollport mounts with the first render, so a request never runs without it. */
     if (element === null) return
     loadingRef.current = true
     setLoading(true)
     setLoadFailed(false)
+    setNoProgress(false)
     const before: PendingPrepend = {
       height: element.scrollHeight,
       top: element.scrollTop,
@@ -140,8 +144,9 @@ export function StatsView(props: StatsViewProps): ReactElement {
       setExhausted(true)
     } else {
       // Another view owns the in-flight page, or this page added no stats row.
-      // Keep the trigger retryable without claiming exhaustion.
+      // Keep the trigger retryable without claiming exhaustion, and say that nothing new arrived.
       pendingPrepend.current = null
+      setNoProgress(true)
     }
     loadingRef.current = false
     setLoading(false)
@@ -208,7 +213,7 @@ export function StatsView(props: StatsViewProps): ReactElement {
           <div className={css.older}>
             {loading ? (
               <span className={css.olderStatus} role="status">{t('loadOlder.loading')}</span>
-            ) : exhausted ? (
+            ) : exhausted || atStart ? (
               <span className={css.olderStatus}>{t('loadOlder.done')}</span>
             ) : loadFailed ? (
               <button type="button" className={css.button} onClick={() => { void requestOlder() }}>
@@ -216,7 +221,7 @@ export function StatsView(props: StatsViewProps): ReactElement {
               </button>
             ) : (
               <button type="button" className={css.button} onClick={() => { void requestOlder() }}>
-                {t('loadOlder')}
+                {t(noProgress ? 'loadOlder.retry' : 'loadOlder')}
               </button>
             )}
           </div>

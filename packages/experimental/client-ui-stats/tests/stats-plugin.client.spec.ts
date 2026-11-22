@@ -483,6 +483,26 @@ describe('browser plugin registration', () => {
     await bench.fiber.dispose()
   })
 
+  it('keeps paging after a mounted view unmounts', async () => {
+    const bench = await mountPlugin()
+    const injectEntry = bench.entries()[0]!.inject as ((sessionId: SessionId) => StatsViewInjected) | undefined
+    const injected = injectEntry!(SID)
+    // Switching tabs unmounts the view, and the next mount reuses this cached inject face.
+    injected.cancel()
+    expect(await injected.loadOlder()).toBe('exhausted')
+    expect(bench.loadOlder).toHaveBeenCalledTimes(1)
+
+    // A wait cut short by an unmount does not stop the next mount from paging either.
+    bench.setOpenState('cold')
+    const cut = injected.loadOlder()
+    injected.cancel()
+    expect(await cut).toBe('retry')
+    bench.setOpenState('open')
+    expect(await injected.loadOlder()).toBe('exhausted')
+    expect(bench.loadOlder).toHaveBeenCalledTimes(2)
+    await bench.fiber.dispose()
+  })
+
   it('resolves prompt images through the shared Conversation image cache', async () => {
     const bench = await mountPlugin()
     const injectEntry = bench.entries()[0]!.inject as ((sessionId: SessionId) => StatsViewInjected) | undefined

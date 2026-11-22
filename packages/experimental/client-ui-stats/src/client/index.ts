@@ -85,7 +85,9 @@ export function apply(ctx: Context): void {
         throw new Error(`client-ui-stats: session "${sessionId}" is unavailable`)
       }
       const target = ctx.uiConversation.binding(sessionId).target('stats')
-      const lifecycle = new AbortController()
+      // The inject face is cached per Session binding and outlives each mounted view, so an
+      // unmount cancels only the waits started so far and the next mount pages again.
+      let lifecycle = new AbortController()
       let source = sources.get(binding)
       if (source === undefined) {
         source = {
@@ -96,16 +98,20 @@ export function apply(ctx: Context): void {
       }
       return {
         hooks: { [HOOK]: source },
-        cancel: () => { lifecycle.abort() },
+        cancel: () => {
+          lifecycle.abort()
+          lifecycle = new AbortController()
+        },
         loadOlder: (): Promise<LoadOlderResult> => {
           const pending = pages.get(binding)
           if (pending !== undefined) return pending
+          const { signal } = lifecycle
           const task = (async (): Promise<LoadOlderResult> => {
             const before = source.getSnapshot()
             // A view can mount before the Session finishes opening; paging before
             // that is a no-op, so wait for open unless the view is gone.
-            await whenOpened(session, lifecycle.signal)
-            if (lifecycle.signal.aborted) return 'retry'
+            await whenOpened(session, signal)
+            if (signal.aborted) return 'retry'
             if (session.getSnapshot().loadingOlder) return 'retry'
             await session.loadOlder()
             if (source.getSnapshot() !== before) return 'grew'

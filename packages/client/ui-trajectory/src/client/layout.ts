@@ -478,7 +478,16 @@ export function deriveTrajectoryLayout(
           laidList.push(laid)
           index = laid.cell.index
         }
-        pushStep(0, 1, laidList)
+        // A result whose call head left the loaded window keeps the Step its event recorded; only a
+        // result without a resolved location is a turn-0 prologue cell, folded into Turn 1 below.
+        const location = eventLocations?.get(node.seq)
+        if (location?.kind === 'step') {
+          pushStep(location.turn.turn, location.step.step, laidList)
+        } else if (location?.kind === 'turn') {
+          for (const laid of laidList) pushMessage(location.turn.turn, laid)
+        } else {
+          pushStep(0, 1, laidList)
+        }
       }
       prevAbsTime = finiteTime(node.time) ?? prevAbsTime
     }

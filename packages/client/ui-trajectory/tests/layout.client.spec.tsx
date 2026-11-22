@@ -363,6 +363,35 @@ describe('deriveTrajectoryLayout', () => {
     ])
   })
 
+  it('keeps a tool result whose call left the loaded window in its recorded turn and step', () => {
+    const nodes: LegacyConversationSlice['nodes'] = [
+      {
+        kind: 'tool-result', seq: 3, time: 3_000, callId: 'c9', call: null, callTime: 2_500,
+        name: 'read', args: PartialArguments.EMPTY,
+        content: [{ type: 'text', text: 'contents' }], isError: false, subCalls: [],
+      },
+      {
+        kind: 'assistant', seq: 4, time: 4_000, turn: 23, step: 10,
+        blocks: [{ kind: 'text', text: 'next step' }],
+      },
+    ]
+    const data = EMPTY_LOCATION_DATA
+    const step = { turn: 23, step: 9, start: undefined, end: undefined, status: 'unknown' as const, data }
+    const turn = {
+      turn: 23, start: undefined, end: undefined, status: 'open' as const, steps: [step], data,
+    }
+    const eventLocations = new Map<number, ConversationLocation>([[3, { kind: 'step', turn, step }]])
+
+    const located = deriveTrajectoryLayout({ nodes, eventLocations, partial: null, runningCalls: [] })
+    expect(located.map(entry => entry.turn)).toEqual([23])
+    expect(located[0]?.groups.map(group => group.title)).toEqual(['Step 9', 'Step 10'])
+    expect(located[0]?.groups[0]?.cells).toMatchObject([{ kind: 'tool', sourceSeq: 3 }])
+
+    // Without a resolved location the result stays a prologue cell folded into Turn 1.
+    const unlocated = deriveTrajectoryLayout({ nodes: nodes.slice(0, 1), partial: null, runningCalls: [] })
+    expect(unlocated.map(entry => entry.turn)).toEqual([1])
+  })
+
   it('keeps a running request boundary after steering input', () => {
     const nodes = [{
       kind: 'steering', messageId: 'steer-1', seq: 3, time: 3_000,
